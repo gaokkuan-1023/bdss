@@ -1,23 +1,52 @@
-"""百度地图 Skill v2 — 通过内部 API 直接查询 POI 电话"""
-
-import sys, json, urllib.parse
+"""百度地图Skill — 通过官方API查询POI电话"""
+import sys, json
 from pathlib import Path
+from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from playwright.sync_api import sync_playwright
 from extractors.phone import PhoneExtractor
 
 _BASE = "https://map.baidu.com"
+_AK = "WuiRNxVTJPsOsNkXh0YbqOenODoZ2XZT"
 
 
 def query_baidu_map_poi(company: str) -> dict:
     """
-    通过百度地图内部 API 查询公司 POI 电话。
-    策略: Playwright + JS fetch 调用内部 API
+    通过百度地图官方 API 查询公司 POI 电话。
+    使用 Place API v2: https://lbsyun.baidu.com/
     """
     result = {"name": company, "address": "", "phone": "", "uid": "",
               "source": "", "all_phones": []}
     extractor = PhoneExtractor(prefer_nearby=True)
+
+    # ===== 方式1: 官方 Place API =====
+    wd = quote(company, safe='')
+    search_url = (f"https://api.map.baidu.com/place/v2/search"
+                  f"?query={wd}&region=%E5%85%A8%E5%9B%BD&output=json&ak={_AK}")
+    try:
+        import urllib.request
+        req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        raw = resp.read()
+        data = json.loads(raw.decode("utf-8"))
+        results = data.get("results", [])
+        if results:
+            poi = results[0]
+            result["name"] = poi.get("name", company)
+            result["address"] = poi.get("address", "")
+            result["uid"] = poi.get("uid", "")
+            phone = poi.get("telephone", "") or poi.get("phone", "")
+            if phone:
+                phones = extractor.extract(phone)
+                result["all_phones"] = phones
+                if phones:
+                    result["phone"] = phones[0]
+                    result["source"] = "百度地图官方API"
+                    print(f"    [OK] 百度地图官方API: {result['name']} - {', '.join(result['all_phones'])}")
+                    return result
+    except Exception as e:
+        print(f"    [!] 官方API请求失败: {e}")
 
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
