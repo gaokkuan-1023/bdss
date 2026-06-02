@@ -47,7 +47,6 @@ def _check_phone_geo(phones, page_texts):
         cl = p.replace('-','').replace(' ','')
         if not cl.startswith('0'): valid.append(p); continue
         if not valid_codes: suspicious.append(p); continue
-        matched = any(cl[:4] in valid_codes or cl[:3] in valid_codes for _ in [1])
         if any(cl[:clen] in valid_codes for clen in [4,3]):
             valid.append(p)
         else:
