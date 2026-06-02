@@ -17,7 +17,30 @@ from skills.google import GoogleSearch
 from skills.bing import BingSearch
 from skills.sogou import SogouSearch
 from extractors.phone import PhoneExtractor
-from utils.helpers import save_result, load_companies_from_file
+from utils.helpers import save_result, load_companies_from_file, safe_print, export_csv
+
+# 搜索词扩展（当初始搜索电话不足时自动补充）
+SEARCH_EXPANSIONS = [
+    ("{公司} 电话", "加关键词:电话"),
+    ("{公司} 联系方式", "加关键词:联系方式"),
+    ("{公司} 联系电话", "加关键词:联系电话"),
+]
+
+# 来源可信度等级
+CONFIDENCE_LEVELS = {
+    "搜索引擎结果页": 5,       # AI 摘要/企业信息卡片 → 最高
+    "天眼查": 4,
+    "企查查": 4,
+    "企查猫": 4,
+    "爱企查": 4,
+    "百度百科": 4,
+    "百度地图": 4,
+    "BOSS直聘": 3,
+    "齐鲁人才网": 3,
+    "58同城": 3,
+    "政府": 3,
+    "默认": 1,                 # 其他页面 → 最低
+}
 
 # 地理校验函数（内联，避免 import 缓存问题）
 def _check_phone_geo(phones, page_texts):
@@ -226,7 +249,48 @@ def search_company(
     except Exception as ge:
         print(f"  [!] 地理校验异常: {ge}")
         result['geo_check'] = {"valid":[],"suspicious":[],"cities":[]}
-    
+
+    # ===== 搜索词扩展：电话不足时自动补充搜索 =====
+    if len(all_phones) < 2 and engine != 'google':
+        for suffix, keyword in SEARCH_EXPANSIONS:
+            expanded = suffix.replace("{公司}", company_name)
+            print(f"\n  [!] 仅找到 {len(all_phones)} 个电话，尝试补充搜索: \"{expanded}\"")
+            try:
+                crawler2 = engine_cls(headless=headless, proxy=proxy)
+                opened2, page_text2 = crawler2.search_and_open(expanded, max_results=max(3, max_results))
+                crawler2.close()
+                if page_text2:
+                    extra = extractor.extract(page_text2)
+                    for p in extra:
+                        if p not in all_phones:
+                            all_phones.add(p)
+                            sources.append({
+                                'url': f'搜索引擎结果页',
+                                'title': f'{engine}搜索结果-{expanded}',
+                                'phone': p,
+                                'keyword': keyword,
+                            })
+                for pd in (opened2 or []):
+                    if pd.get('page_text'):
+                        for p in extractor.extract(pd['page_text']):
+                            if p not in all_phones:
+                                all_phones.add(p)
+                                sources.append({
+                                    'url': pd['url'],
+                                    'title': pd['title'],
+                                    'phone': p,
+                                    'keyword': keyword,
+                                })
+                print(f"    补充后: {len(all_phones)} 个电话")
+                if len(all_phones) >= 3:
+                    break
+            except Exception as e:
+                print(f"    补充搜索失败: {e}")
+
+    # 重建 result
+    result['phones'] = sorted(all_phones)
+    result['phone_count'] = len(all_phones)
+    result['sources'] = sources
     return result
 def search_all_engines(
     company_name: str,
@@ -308,6 +372,8 @@ def main():
     parser.add_argument('--max', '-m', type=int, default=5,
                         help='每个引擎打开前 N 个结果 (默认: 5)')
     parser.add_argument('--output', '-o', help='输出 JSON 文件路径')
+    parser.add_argument('--csv', action='store_true',
+                        help='同时导出 CSV 文件')
     parser.add_argument('--proxy', help='代理地址')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='显示详细信息')
@@ -378,6 +444,11 @@ def main():
         if args.output:
             path = save_result(company, result, args.output)
             print(f"[保存] {path}")
+
+        if args.csv or (args.output and args.output.endswith('.csv')):
+            csv_path = args.output if args.output and args.output.endswith('.csv') else args.output or '.'
+            csv_file = export_csv(company, result.get('phones', []), result.get('sources', []), csv_path)
+            print(f"[CSV] {csv_file}")
 
     if len(companies) > 1:
         summary = {

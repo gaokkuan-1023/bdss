@@ -121,3 +121,31 @@ def safe_print(text: str, end: str = '\n'):
     except UnicodeEncodeError:
         safe = text.encode('gbk', errors='replace').decode('gbk')
         print(safe, end=end)
+
+
+def export_csv(company: str, phones: list[str], sources: list[dict], output_path: str) -> str:
+    """导出结果为 CSV 文件"""
+    import csv
+    from pathlib import Path
+    path = Path(output_path)
+    if path.is_dir():
+        safe_name = re.sub(r'[\\/:*?"<>|]', '_', company)
+        path = path / f"{safe_name}.csv"
+    with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['电话', '类型', '来源URL', '来源标题', '警告'])
+        for phone in phones:
+            # 找所有该电话的来源
+            related = [s for s in sources if s['phone'] == phone]
+            if related:
+                for s in related:
+                    writer.writerow([
+                        phone,
+                        '手机' if not phone.startswith('0') and not phone.startswith('4') else '固话' if phone.startswith('0') else '服务热线',
+                        s.get('url', ''),
+                        s.get('title', ''),
+                        s.get('warning', ''),
+                    ])
+            else:
+                writer.writerow([phone, '', '', '', ''])
+    return str(path)
