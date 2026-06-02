@@ -16,6 +16,7 @@ from skills.baidu import BaiduSearch
 from skills.google import GoogleSearch
 from skills.bing import BingSearch
 from skills.sogou import SogouSearch
+from skills.baidumap import query_baidu_map_poi as query_map_poi
 from extractors.phone import PhoneExtractor
 from utils.helpers import save_result, load_companies_from_file, safe_print, export_csv
 
@@ -291,6 +292,28 @@ def search_company(
     result['phones'] = sorted(all_phones)
     result['phone_count'] = len(all_phones)
     result['sources'] = sources
+
+    # ===== 百度地图 POI 补充查询 =====
+    if len(all_phones) < 3 or engine != 'google':
+        print(f"\n  [百度地图] 补充查询POI数据...")
+        map_r = query_map_poi(company_name)
+        if map_r.get('all_phones'):
+            for p in map_r['all_phones']:
+                if p not in all_phones:
+                    all_phones.add(p)
+                    sources.append({
+                        'url': f'百度地图POI',
+                        'title': f'{map_r.get("name", company_name)}-百度地图',
+                        'phone': p,
+                    })
+            if map_r.get('address'):
+                print(f"  [百度地图] 地址: {map_r['address']}")
+            print(f"  [百度地图] 新增 {len([p for p in map_r['all_phones'] if p not in all_phones])} 个电话")
+            # 更新 result
+            result['phones'] = sorted(all_phones)
+            result['phone_count'] = len(all_phones)
+            result['sources'] = sources
+
     return result
 def search_all_engines(
     company_name: str,
