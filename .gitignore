@@ -1,0 +1,13 @@
+# 公司联系电话爬虫
+
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.txt
+*.json
+result.*
+.DS_Store
+env/
+venv/
+.venv/
