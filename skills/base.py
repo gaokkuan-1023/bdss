@@ -9,6 +9,7 @@ try:
     HAS_STEALTH = True
 except ImportError:
     HAS_STEALTH = False
+from utils.helpers import safe_print
 
 
 class SearchSkill(ABC):
@@ -102,20 +103,20 @@ class SearchSkill(ABC):
             if not search_page_text:
                 search_page_text = self._search_page_html
             else:
-                search_page_text = search_page_text + '\n' + self._search_page_html[-2000:]
+                # 手机版数据可能比桌面版完整，追加合并
+                extra = self._search_page_html.strip()
+                # 不硬截断，只在太长时取末尾（手机版追加的电话在最后）
+                if len(extra) > 3000:
+                    extra = extra[-3000:]
+                search_page_text = search_page_text + '\n' + extra
 
         for i, r in enumerate(results[:max_results]):
             try:
                 text = self.open_result(r['url'])
                 opened.append({**r, 'page_text': text})
-                title_str = str(r.get('title', '') or '')[:40]
-                title_safe = title_str.encode('gbk', errors='replace').decode('gbk')
-                print(f"  [OK] 已打开: {title_safe}...")
+                safe_print(f"  [OK] 已打开: {str(r.get('title', '') or '')[:40]}...")
             except Exception as e:
-                err_msg = str(e).encode('gbk', errors='replace').decode('gbk') if isinstance(e, UnicodeEncodeError) else str(e)
-                title_str = str(r.get('title', '') or '')[:30]
-                title_safe = title_str.encode('gbk', errors='replace').decode('gbk')
-                print(f"  [X] 打开失败: {title_safe} - {err_msg[:60]}")
+                safe_print(f"  [X] 打开失败: {str(r.get('title', '') or '')[:30]} - {str(e)[:60]}")
                 opened.append({**r, 'page_text': ''})
 
         return opened, search_page_text

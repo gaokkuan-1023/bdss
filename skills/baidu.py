@@ -174,32 +174,35 @@ class BaiduSearch(SearchSkill):
         old_ctx = self._context
         old_page = self._page
 
-        # 新建手机版上下文
-        from skills.base import _stealth, HAS_STEALTH
-        mobile_ctx = self._browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-            viewport={"width": 390, "height": 844},
-            locale="zh-CN",
-        )
-        mobile_page = mobile_ctx.new_page()
-        if HAS_STEALTH:
-            try:
-                _stealth.apply_stealth_sync(mobile_page)
-            except Exception:
-                pass
-        mobile_page.goto(f"https://m.baidu.com/s?word={quote(query)}")
-        mobile_page.wait_for_timeout(5000)
+        try:
+            # 新建手机版上下文
+            from skills.base import _stealth, HAS_STEALTH
+            mobile_ctx = self._browser.new_context(
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+                viewport={"width": 390, "height": 844},
+                locale="zh-CN",
+            )
+            mobile_page = mobile_ctx.new_page()
+            if HAS_STEALTH:
+                try:
+                    _stealth.apply_stealth_sync(mobile_page)
+                except Exception:
+                    pass
+            mobile_page.goto(f"https://m.baidu.com/s?word={quote(query)}")
+            mobile_page.wait_for_timeout(5000)
 
-        text = mobile_page.evaluate("() => document.body.innerText")
-        mobile_ctx.close()
+            text = mobile_page.evaluate("() => document.body.innerText")
+            mobile_ctx.close()
 
-        # 恢复原页面
-        self._context = old_ctx
-        self._page = old_page
-
-        from extractors.phone import PhoneExtractor
-        pe = PhoneExtractor(prefer_nearby=True)
-        return pe.extract(text)
+            from extractors.phone import PhoneExtractor
+            pe = PhoneExtractor(prefer_nearby=True)
+            return pe.extract(text)
+        except Exception:
+            return []
+        finally:
+            # 确保恢复原页面上下文
+            self._context = old_ctx
+            self._page = old_page
 
     def open_result(self, url: str) -> str:
         self._ensure_browser()

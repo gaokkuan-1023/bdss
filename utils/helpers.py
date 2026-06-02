@@ -1,6 +1,7 @@
 # utils/helpers.py
 import re
 import json
+import sys
 from pathlib import Path
 
 
@@ -108,3 +109,15 @@ def load_companies_from_file(filepath: str) -> list[str]:
             if line and not line.startswith('#'):
                 companies.append(line)
     return companies
+
+
+def safe_print(text: str, end: str = '\n'):
+    """
+    Windows GBK 终端安全的打印函数。
+    自动替换无法编码的字符。
+    """
+    try:
+        print(text, end=end)
+    except UnicodeEncodeError:
+        safe = text.encode('gbk', errors='replace').decode('gbk')
+        print(safe, end=end)
