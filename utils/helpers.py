@@ -87,6 +87,15 @@ def load_companies_from_file(filepath: str) -> list[str]:
     return companies
 
 
+def _classify_phone(phone: str) -> str:
+    """根据号码前缀判断类型：手机/固话/服务热线"""
+    if phone.startswith(('400', '800')):
+        return '服务热线'
+    if phone.startswith('0'):
+        return '固话'
+    return '手机'
+
+
 def export_excel(company: str, phones: list[str], sources: list[dict], output_path: str) -> str:
     """导出结果为 Excel 文件"""
     from openpyxl import Workbook
@@ -104,7 +113,7 @@ def export_excel(company: str, phones: list[str], sources: list[dict], output_pa
             for s in related:
                 ws.append([
                     phone,
-                    '手机' if not phone.startswith('0') and not phone.startswith('4') else '固话' if phone.startswith('0') else '服务热线',
+                    _classify_phone(phone),
                     s.get('url', ''),
                     s.get('title', ''),
                     s.get('warning', ''),
@@ -137,7 +146,7 @@ def export_csv(company: str, phones: list[str], sources: list[dict], output_path
                 for s in related:
                     writer.writerow([
                         phone,
-                        '手机' if not phone.startswith('0') and not phone.startswith('4') else '固话' if phone.startswith('0') else '服务热线',
+                        _classify_phone(phone),
                         s.get('url', ''),
                         s.get('title', ''),
                         s.get('warning', ''),

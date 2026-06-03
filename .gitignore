@@ -8,8 +8,11 @@ __pycache__/
 !requirements.txt
 *.json
 result.*
+.bdss_cache.db
 .DS_Store
 .env
 env/
 venv/
 .venv/
+dist/
+*.egg-info/

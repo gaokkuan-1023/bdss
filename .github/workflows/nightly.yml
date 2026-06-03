@@ -36,7 +36,6 @@ jobs:
         run: |
           python -c "
           from extractors.phone import PhoneExtractor
-          from utils.helpers import export_csv
           pe = PhoneExtractor()
           
           # 验证核心功能正常
