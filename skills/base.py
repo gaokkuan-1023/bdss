@@ -26,6 +26,7 @@ class SearchSkill(ABC):
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._pw = None
         self._started = False
 
     def _ensure_browser(self):
@@ -33,6 +34,7 @@ class SearchSkill(ABC):
         if not self._started:
             pw = sync_playwright()
             p = pw.start()
+            self._pw = p  # 先赋值，确保异常时也能 stop
             launch_kwargs = {"headless": self.headless}
             if self.proxy:
                 launch_kwargs["proxy"] = {"server": self.proxy}
@@ -56,7 +58,6 @@ class SearchSkill(ABC):
                     pass
             # 设置页面加载超时（毫秒）
             self._page.set_default_timeout(self.timeout)
-            self._pw = p
             self._started = True
 
     @property
@@ -129,11 +130,12 @@ class SearchSkill(ABC):
                 self._context.close()
             if self._browser:
                 self._browser.close()
-            if hasattr(self, '_pw') and self._pw:
+            if self._pw:
                 self._pw.stop()
         except Exception:
             pass
         self._browser = None
         self._context = None
         self._page = None
+        self._pw = None
         self._started = False

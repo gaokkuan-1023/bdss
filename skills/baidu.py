@@ -173,7 +173,6 @@ class BaiduSearch(SearchSkill):
 
     def _mobile_search_supplement(self, query: str) -> list[str]:
         """用手机版百度搜索补充获取企业信息"""
-        from utils.helpers import extract_phone_numbers
         old_ctx = self._context
         old_page = self._page
 

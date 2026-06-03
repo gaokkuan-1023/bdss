@@ -47,40 +47,6 @@ CONFIDENCE_LEVELS = {
     "默认": 1,                 # 其他页面 → 最低
 }
 
-# 地理校验函数（内联，避免 import 缓存问题）
-def _check_phone_geo(phones, page_texts):
-    """检查电话区号是否与页面中提取的城市匹配"""
-    import re
-    city_codes = {'枣庄':['0632'],'济南':['0531'],'青岛':['0532'],'潍坊':['0536'],
-                  '淄博':['0533'],'德州':['0534'],'烟台':['0535'],'济宁':['0537'],
-                  '泰安':['0538'],'临沂':['0539'],'菏泽':['0530'],'威海':['0631'],
-                  '日照':['0633'],'聊城':['0635'],'滨州':['0543']}
-    # 提取城市
-    cities = set()
-    for t in page_texts:
-        for m in re.findall(r'([\u4e00-\u9fa5]{2,4})市', t):
-            if m in city_codes: cities.add(m)
-        for m in re.findall(r'(?:山东|广东|浙江|江苏)(?:省)?([\u4e00-\u9fa5]{2,4})(?:市|区|县)', t):
-            if m in city_codes: cities.add(m)
-    # 提取地址
-    addr = None
-    for t in page_texts:
-        m = re.search(r'地址[：:]\s*([^\n。；]{5,80})', t)
-        if m: addr = m.group(1).strip(); break
-    # 校验
-    valid_codes = set()
-    for c in cities: valid_codes.update(city_codes.get(c,[]))
-    valid, suspicious = [], []
-    for p in phones:
-        cl = p.replace('-','').replace(' ','')
-        if not cl.startswith('0'): valid.append(p); continue
-        if not valid_codes: suspicious.append(p); continue
-        if any(cl[:clen] in valid_codes for clen in [4,3]):
-            valid.append(p)
-        else:
-            suspicious.append(p)
-    return {"valid":valid,"suspicious":suspicious,"cities":list(cities),"address":addr}
-
 # 搜索引擎注册表
 ENGINE_REGISTRY = {
     'baidu': BaiduSearch,
@@ -147,7 +113,7 @@ def search_company(
         if not search_phones and engine == 'baidu' and headless:
             logger.info(f"  [!] 搜索结果页未找到电话（AI摘要可能未加载），重试搜索...")
             crawler.close()
-            opened_pages, search_page_text = None, None
+            opened_pages, search_page_text = [], None
             # 等待后重试
             time.sleep(3)
             crawler2 = engine_cls(headless=headless, proxy=proxy)
@@ -301,6 +267,8 @@ def search_company(
         logger.info(f"  [百度地图] 补充查询POI数据...")
         map_r = query_map_poi(company_name)
         if map_r.get('all_phones'):
+            # 先统计新增电话数（此时还没加入 all_phones）
+            new_count = len([p for p in map_r['all_phones'] if p not in all_phones])
             for p in map_r['all_phones']:
                 if p not in all_phones:
                     all_phones.add(p)
@@ -311,7 +279,7 @@ def search_company(
                     })
             if map_r.get('address'):
                 logger.info(f"  [百度地图] 地址: {map_r['address']}")
-            logger.info(f"  [百度地图] 新增 {len([p for p in map_r['all_phones'] if p not in all_phones])} 个电话")
+            logger.info(f"  [百度地图] 新增 {new_count} 个电话")
             # 更新 result
             result['phones'] = sorted(all_phones)
             result['phone_count'] = len(all_phones)

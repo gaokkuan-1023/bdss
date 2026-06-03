@@ -1,7 +1,6 @@
 """电话号码提取器"""
 
 import re
-from typing import Optional
 
 
 class PhoneExtractor:

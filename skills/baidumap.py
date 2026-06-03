@@ -1,5 +1,5 @@
 """百度地图Skill — 通过官方API查询POI电话"""
-import sys, json
+import os, sys, json
 import logging
 from pathlib import Path
 from urllib.parse import quote
@@ -11,7 +11,26 @@ from extractors.phone import PhoneExtractor
 logger = logging.getLogger(__name__)
 
 _BASE = "https://map.baidu.com"
-_AK = "WuiRNxVTJPsOsNkXh0YbqOenODoZ2XZT"
+# 优先从环境变量读取，无配置时使用空值（API通道会降级到页面抓取）
+_AK = os.environ.get("BAIDU_MAP_AK", "")
+
+
+def _get_ak() -> str:
+    """获取百度地图 API Key，优先环境变量，其次 .env 文件"""
+    ak = os.environ.get("BAIDU_MAP_AK", "")
+    if not ak:
+        # 尝试从 .env 文件加载
+        env_path = Path(__file__).parent.parent / ".env"
+        if env_path.exists():
+            try:
+                for line in env_path.read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith("BAIDU_MAP_AK="):
+                        ak = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+            except Exception:
+                pass
+    return ak
 
 
 def query_baidu_map_poi(company: str) -> dict:
