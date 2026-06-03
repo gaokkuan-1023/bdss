@@ -1,7 +1,10 @@
 """Google 搜索技能 (Playwright)"""
 
 from urllib.parse import quote, urlparse, parse_qs
+import logging
 from skills.base import SearchSkill
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleSearch(SearchSkill):
@@ -22,7 +25,7 @@ class GoogleSearch(SearchSkill):
     def search(self, query: str, max_results: int = 50) -> list[dict]:
         self._ensure_browser()
         url = self.search_url.format(query=quote(query))
-        print(f"  -> 正在 Google 搜索: {query}")
+        logger.info(f"  -> 正在 Google 搜索: {query}")
         self.page.goto(url)
         self.page.wait_for_timeout(3000)
 
@@ -50,7 +53,7 @@ class GoogleSearch(SearchSkill):
             except Exception:
                 continue
 
-        print(f"  [OK] 获取到 {len(results)} 条搜索结果")
+        logger.info(f"  [OK] 获取到 {len(results)} 条搜索结果")
         return results
 
     def open_result(self, url: str) -> str:

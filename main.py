@@ -1,11 +1,12 @@
 """
 公司联系电话爬虫 - 主入口
 
-支持搜索引擎: baidu / google / bing / sogou
+支持搜索引擎: baidu / google / bing / sogou / baidumap
 多引擎合并搜索: --all (自动跑 baidu + bing + sogou，合并结果去重)
 """
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -18,7 +19,10 @@ from skills.bing import BingSearch
 from skills.sogou import SogouSearch
 from skills.baidumap import query_baidu_map_poi as query_map_poi
 from extractors.phone import PhoneExtractor
-from utils.helpers import save_result, load_companies_from_file, safe_print, export_csv
+from utils.helpers import save_result, load_companies_from_file, export_csv
+from utils.helpers import setup_logger
+
+logger = logging.getLogger(__name__)
 
 # 搜索词扩展（当初始搜索电话不足时自动补充）
 SEARCH_EXPANSIONS = [
@@ -96,6 +100,7 @@ def search_company(
     headless: bool = True,
     proxy: str = None,
     verbose: bool = False,
+    delay: int = 0,  # 请求间隔（毫秒）
 ) -> dict:
     """
     搜索公司并提取联系电话。
@@ -105,7 +110,7 @@ def search_company(
     """
     engine_cls = ENGINE_REGISTRY.get(engine)
     if not engine_cls:
-        print(f"[X] 不支持的搜索引擎: {engine}")
+        logger.error(f"不支持的搜索引擎: {engine}")
         return {"company": company_name, "phones": [], "sources": [], "engine": engine}
 
     crawler = engine_cls(headless=headless, proxy=proxy)
@@ -115,9 +120,12 @@ def search_company(
     sources = []
 
     try:
-        print(f"\n{'=' * 50}")
-        print(f"[搜索] {company_name}  (引擎: {engine})")
-        print(f"{'=' * 50}")
+        logger.info(f"{'=' * 50}")
+        logger.info(f"[搜索] {company_name}  (引擎: {engine})")
+        logger.info(f"{'=' * 50}")
+
+        if delay > 0:
+            time.sleep(delay / 1000)
 
         opened_pages, search_page_text = crawler.search_and_open(company_name, max_results=max_results)
 
@@ -133,17 +141,19 @@ def search_company(
                     'phone': p,
                 })
             if search_phones and verbose:
-                print(f"\n  [搜索结果页] 发现电话: {', '.join(search_phones)}")
+                logger.info(f"  [搜索结果页] 发现电话: {', '.join(search_phones)}")
 
         # 如果没有从搜索页找到电话（AI 摘要可能没加载），重试一次
         if not search_phones and engine == 'baidu' and headless:
-            print(f"  [!] 搜索结果页未找到电话（AI摘要可能未加载），重试搜索...")
+            logger.info(f"  [!] 搜索结果页未找到电话（AI摘要可能未加载），重试搜索...")
             crawler.close()
             opened_pages, search_page_text = None, None
             # 等待后重试
             time.sleep(3)
             crawler2 = engine_cls(headless=headless, proxy=proxy)
             try:
+                if delay > 0:
+                    time.sleep(delay / 1000)
                 opened_pages2, search_page_text2 = crawler2.search_and_open(company_name, max_results=max_results)
                 crawler = crawler2
                 opened_pages, search_page_text = opened_pages2, search_page_text2
@@ -157,7 +167,7 @@ def search_company(
                             'phone': p,
                         })
                     if search_phones2 and verbose:
-                        print(f"\n  [搜索结果页-重试] 发现电话: {', '.join(search_phones2)}")
+                        logger.info(f"\n  [搜索结果页-重试] 发现电话: {', '.join(search_phones2)}")
             except Exception:
                 pass
 
@@ -175,23 +185,13 @@ def search_company(
                 })
 
             if verbose:
-                try:
-                    print(f"\n  [页面] {page_data['title'][:50]}")
-                    print(f"     URL: {page_data['url']}")
-                    if phones:
-                        for ph in phones:
-                            print(f"     [电话] 发现电话: {ph}")
-                    else:
-                        print(f"     [X] 未发现电话")
-                except UnicodeEncodeError:
-                    title_safe = page_data['title'].encode('gbk', errors='replace').decode('gbk')[:50]
-                    print(f"\n  [页面] {title_safe}")
-                    print(f"     URL: {page_data['url']}")
-                    if phones:
-                        for ph in phones:
-                            print(f"     [电话] 发现电话: {ph}")
-                    else:
-                        print(f"     [X] 未发现电话")
+                logger.info(f"  [页面] {page_data['title'][:50]}")
+                logger.info(f"     URL: {page_data['url']}")
+                if phones:
+                    for ph in phones:
+                        logger.info(f"     [电话] 发现电话: {ph}")
+                else:
+                    logger.info(f"     [X] 未发现电话")
 
         # 从搜索结果摘要中提取电话
         for r in opened_pages:
@@ -201,7 +201,7 @@ def search_company(
                     all_phones.add(p)
 
     except Exception as e:
-        print(f"[X] 执行出错: {e}")
+        logger.error(f"执行出错: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -215,7 +215,7 @@ def search_company(
         "engine": engine,
     }
 
-    # ===== 地理校验（内联，不用外部函数）=====
+    # ===== 地理校验 =====
     try:
         import re
         all_page_texts = [p.get('page_text','') for p in opened_pages if p.get('page_text')] + [search_page_text or '']
@@ -237,27 +237,30 @@ def search_company(
             if any(cl[:ln] in vc for ln in [4,3]): vld.append(p)
             else: sus.append(p)
         if cts:
-            print(f"\n  [地理校验] 检测到城市: {', '.join(cts)}")
+            logger.info(f"  [地理校验] 检测到城市: {', '.join(cts)}")
             if sus:
-                print(f"  [可疑] 以下号码区号不匹配: {', '.join(sus)}")
+                logger.warning(f"  [可疑] 以下号码区号不匹配: {', '.join(sus)}")
                 for s in sus:
                     for src in result['sources']:
                         if src['phone'] == s: src['warning'] = '区号不匹配'
-            if vld: print(f"  [匹配] {', '.join(vld)}")
+            if vld:
+                logger.info(f"  [匹配] {', '.join(vld)}")
         else:
-            print(f"  [!] 未检测到城市，跳过区号校验")
+            logger.info(f"  [!] 未检测到城市，跳过区号校验")
         result['geo_check'] = {"valid":vld,"suspicious":sus,"cities":list(cts)}
     except Exception as ge:
-        print(f"  [!] 地理校验异常: {ge}")
+        logger.warning(f"  [!] 地理校验异常: {ge}")
         result['geo_check'] = {"valid":[],"suspicious":[],"cities":[]}
 
     # ===== 搜索词扩展：电话不足时自动补充搜索 =====
     if len(all_phones) < 2 and engine != 'google':
         for suffix, keyword in SEARCH_EXPANSIONS:
             expanded = suffix.replace("{公司}", company_name)
-            print(f"\n  [!] 仅找到 {len(all_phones)} 个电话，尝试补充搜索: \"{expanded}\"")
+            logger.info(f"  [!] 仅找到 {len(all_phones)} 个电话，尝试补充搜索: \"{expanded}\"")
             try:
                 crawler2 = engine_cls(headless=headless, proxy=proxy)
+                if delay > 0:
+                    time.sleep(delay / 1000)
                 opened2, page_text2 = crawler2.search_and_open(expanded, max_results=max(3, max_results))
                 crawler2.close()
                 if page_text2:
@@ -282,11 +285,11 @@ def search_company(
                                     'phone': p,
                                     'keyword': keyword,
                                 })
-                print(f"    补充后: {len(all_phones)} 个电话")
+                logger.info(f"    补充后: {len(all_phones)} 个电话")
                 if len(all_phones) >= 3:
                     break
             except Exception as e:
-                print(f"    补充搜索失败: {e}")
+                logger.warning(f"    补充搜索失败: {e}")
 
     # 重建 result
     result['phones'] = sorted(all_phones)
@@ -295,7 +298,7 @@ def search_company(
 
     # ===== 百度地图 POI 补充查询 =====
     if len(all_phones) < 3 or engine != 'google':
-        print(f"\n  [百度地图] 补充查询POI数据...")
+        logger.info(f"  [百度地图] 补充查询POI数据...")
         map_r = query_map_poi(company_name)
         if map_r.get('all_phones'):
             for p in map_r['all_phones']:
@@ -307,20 +310,23 @@ def search_company(
                         'phone': p,
                     })
             if map_r.get('address'):
-                print(f"  [百度地图] 地址: {map_r['address']}")
-            print(f"  [百度地图] 新增 {len([p for p in map_r['all_phones'] if p not in all_phones])} 个电话")
+                logger.info(f"  [百度地图] 地址: {map_r['address']}")
+            logger.info(f"  [百度地图] 新增 {len([p for p in map_r['all_phones'] if p not in all_phones])} 个电话")
             # 更新 result
             result['phones'] = sorted(all_phones)
             result['phone_count'] = len(all_phones)
             result['sources'] = sources
 
     return result
+
+
 def search_all_engines(
     company_name: str,
     max_results: int = 5,
     headless: bool = True,
     proxy: str = None,
     verbose: bool = False,
+    delay: int = 0,
 ) -> dict:
     """
     多引擎合并搜索：依次用 baidu → bing → sogou 搜索，合并结果去重。
@@ -330,9 +336,9 @@ def search_all_engines(
     engines_run = []
 
     for eng in MULTI_ENGINES:
-        print(f"\n{'#' * 60}")
-        print(f"# 引擎: {eng}")
-        print(f"{'#' * 60}")
+        logger.info(f"{'#' * 60}")
+        logger.info(f"# 引擎: {eng}")
+        logger.info(f"{'#' * 60}")
         result = search_company(
             company_name=company_name,
             engine=eng,
@@ -340,6 +346,7 @@ def search_all_engines(
             headless=headless,
             proxy=proxy,
             verbose=verbose,
+            delay=delay,
         )
         per_engine.append({eng: result})
         engines_run.append(eng)
@@ -398,6 +405,8 @@ def main():
     parser.add_argument('--csv', action='store_true',
                         help='同时导出 CSV 文件')
     parser.add_argument('--proxy', help='代理地址')
+    parser.add_argument('--delay', type=int, default=0,
+                        help='请求间隔（毫秒），避免触发反爬')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='显示详细信息')
     parser.add_argument('--visible', action='store_true',
@@ -405,13 +414,18 @@ def main():
 
     args = parser.parse_args()
 
+    # 配置日志级别
+    level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logger(level=level)
+    logger.setLevel(level)
+
     companies = []
     if args.file:
         try:
             companies = load_companies_from_file(args.file)
-            print(f"[列表] 从文件加载了 {len(companies)} 个公司")
+            logger.info(f"[列表] 从文件加载了 {len(companies)} 个公司")
         except FileNotFoundError as e:
-            print(f"[X] {e}")
+            logger.error(f"文件不存在: {e}")
             sys.exit(1)
     elif args.company:
         companies = [args.company]
@@ -422,9 +436,9 @@ def main():
     headless = not args.visible
 
     for i, company in enumerate(companies):
-        print(f"\n{'#' * 60}")
-        print(f"# 进度: [{i + 1}/{len(companies)}]  {company}")
-        print(f"{'#' * 60}")
+        logger.info(f"{'#' * 60}")
+        logger.info(f"# 进度: [{i + 1}/{len(companies)}]  {company}")
+        logger.info(f"{'#' * 60}")
 
         if args.all:
             result = search_all_engines(
@@ -433,6 +447,7 @@ def main():
                 headless=headless,
                 proxy=args.proxy,
                 verbose=args.verbose,
+                delay=args.delay,
             )
         else:
             result = search_company(
@@ -442,36 +457,37 @@ def main():
                 headless=headless,
                 proxy=args.proxy,
                 verbose=args.verbose,
+                delay=args.delay,
             )
 
         # 打印合并摘要
         if args.all:
             engines_str = ' + '.join(result.get('engines_run', []))
-            print(f"\n{'=' * 50}")
-            print(f"[合并结果] {company}")
-            print(f"  引擎: {engines_str}")
-            print(f"  电话总数: {result['phone_count']}")
+            logger.info(f"{'=' * 50}")
+            logger.info(f"[合并结果] {company}")
+            logger.info(f"  引擎: {engines_str}")
+            logger.info(f"  电话总数: {result['phone_count']}")
             if result['phones']:
                 for p in result['phones']:
-                    print(f"  [电话] {p}")
-            print(f"{'=' * 50}")
+                    logger.info(f"  [电话] {p}")
+            logger.info(f"{'=' * 50}")
         else:
-            print(f"\n{'---' * 40}")
-            print(f"[结果] {company}")
-            print(f"  找到 {result['phone_count']} 个电话号码")
+            logger.info(f"{'---' * 40}")
+            logger.info(f"[结果] {company}")
+            logger.info(f"  找到 {result['phone_count']} 个电话号码")
             if result['phones']:
                 for p in result['phones']:
-                    print(f"  [电话] {p}")
-            print(f"{'---' * 40}")
+                    logger.info(f"  [电话] {p}")
+            logger.info(f"{'---' * 40}")
 
         if args.output:
             path = save_result(company, result, args.output)
-            print(f"[保存] {path}")
+            logger.info(f"[保存] {path}")
 
         if args.csv or (args.output and args.output.endswith('.csv')):
             csv_path = args.output if args.output and args.output.endswith('.csv') else args.output or '.'
             csv_file = export_csv(company, result.get('phones', []), result.get('sources', []), csv_path)
-            print(f"[CSV] {csv_file}")
+            logger.info(f"[CSV] {csv_file}")
 
     if len(companies) > 1:
         summary = {
@@ -480,7 +496,7 @@ def main():
             "results": [],
         }
         path = save_result("all_companies", summary, args.output or ".")
-        print(f"\n[结果] 全部结果已保存: {path}")
+        logger.info(f"\n[结果] 全部结果已保存: {path}")
 
 
 if __name__ == '__main__':

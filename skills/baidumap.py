@@ -1,11 +1,14 @@
 """百度地图Skill — 通过官方API查询POI电话"""
 import sys, json
+import logging
 from pathlib import Path
 from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from playwright.sync_api import sync_playwright
 from extractors.phone import PhoneExtractor
+
+logger = logging.getLogger(__name__)
 
 _BASE = "https://map.baidu.com"
 _AK = "WuiRNxVTJPsOsNkXh0YbqOenODoZ2XZT"
@@ -43,10 +46,10 @@ def query_baidu_map_poi(company: str) -> dict:
                 if phones:
                     result["phone"] = phones[0]
                     result["source"] = "百度地图官方API"
-                    print(f"    [OK] 百度地图官方API: {result['name']} - {', '.join(result['all_phones'])}")
+                    logger.info(f"    [OK] 百度地图官方API: {result['name']} - {', '.join(result['all_phones'])}")
                     return result
     except Exception as e:
-        print(f"    [!] 官方API请求失败: {e}")
+        logger.warning(f"    [!] 官方API请求失败: {e}")
 
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
@@ -60,7 +63,7 @@ def query_baidu_map_poi(company: str) -> dict:
         # 直接打开搜索结果的静态页面
         wd = urllib.parse.quote(company)
         search_url = f"{_BASE}/search/{wd}"
-        print(f"    [百度地图] 打开: {search_url}")
+        logger.info(f"    [百度地图] 打开: {search_url}")
         try:
             page.goto(search_url, wait_until="networkidle")
         except Exception:
@@ -94,9 +97,9 @@ def query_baidu_map_poi(company: str) -> dict:
                     result["name"] = line.strip()
 
         if result["all_phones"]:
-            print(f"    [OK] 百度地图: {result['name']} - {', '.join(result['all_phones'])}")
+            logger.info(f"    [OK] 百度地图: {result['name']} - {', '.join(result['all_phones'])}")
         else:
-            print(f"    [-] 百度地图搜索页未发现电话")
+            logger.info(f"    [-] 百度地图搜索页未发现电话")
             # 也试试搜索建议API作为补充
             try:
                 api = ctx.request
@@ -110,7 +113,7 @@ def query_baidu_map_poi(company: str) -> dict:
                             result["all_phones"].append(p)
                     if result["all_phones"]:
                         result["source"] = "百度地图建议"
-                        print(f"    [OK] 百度地图建议: {', '.join(result['all_phones'])}")
+                        logger.info(f"    [OK] 百度地图建议: {', '.join(result['all_phones'])}")
             except Exception:
                 pass
 

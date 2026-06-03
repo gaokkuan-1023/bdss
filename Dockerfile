@@ -1,0 +1,43 @@
+FROM python:3.11-slim
+
+LABEL description="公司联系电话爬虫 - Company Contact Crawler"
+LABEL maintainer="bdss"
+
+# 安装 Playwright 系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libu2f-udev \
+    libvulkan1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 安装 Python 依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -m playwright install chromium && \
+    python -m playwright install-deps chromium
+
+# 拷贝源码
+COPY . .
+
+# 默认入口
+ENTRYPOINT ["python", "main.py"]
+CMD ["--help"]

@@ -2,7 +2,34 @@
 import re
 import json
 import sys
+import logging
 from pathlib import Path
+
+
+def setup_logger(name: str = "bdss", level: int = logging.INFO) -> logging.Logger:
+    """
+    设置并返回带控制台 Handler 的 Logger。
+
+    日志格式: [时间] [级别] [模块] 消息
+    默认 INFO 级别，--verbose 模式下使用 DEBUG 级别。
+    """
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger  # 避免重复添加
+
+    logger.setLevel(level)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+
+    fmt = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    handler.setFormatter(fmt)
+    logger.addHandler(handler)
+
+    return logger
 
 
 def extract_phone_numbers(text: str) -> list[dict]:

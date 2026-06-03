@@ -1,6 +1,7 @@
 """搜索引擎技能基类 - 统一使用 Playwright 引擎"""
 
 from abc import ABC, abstractmethod
+import logging
 from typing import Optional
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 try:
@@ -9,7 +10,7 @@ try:
     HAS_STEALTH = True
 except ImportError:
     HAS_STEALTH = False
-from utils.helpers import safe_print
+logger = logging.getLogger(__name__)
 
 
 class SearchSkill(ABC):
@@ -114,9 +115,9 @@ class SearchSkill(ABC):
             try:
                 text = self.open_result(r['url'])
                 opened.append({**r, 'page_text': text})
-                safe_print(f"  [OK] 已打开: {str(r.get('title', '') or '')[:40]}...")
+                logger.info(f"  [OK] 已打开: {str(r.get('title', '') or '')[:40]}...")
             except Exception as e:
-                safe_print(f"  [X] 打开失败: {str(r.get('title', '') or '')[:30]} - {str(e)[:60]}")
+                logger.info(f"  [X] 打开失败: {str(r.get('title', '') or '')[:30]} - {str(e)[:60]}")
                 opened.append({**r, 'page_text': ''})
 
         return opened, search_page_text

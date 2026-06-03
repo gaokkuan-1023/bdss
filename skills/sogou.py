@@ -1,7 +1,10 @@
 """搜狗搜索技能 (Playwright)"""
 
+import logging
 from urllib.parse import quote, urljoin
 from skills.base import SearchSkill
+
+logger = logging.getLogger(__name__)
 
 
 class SogouSearch(SearchSkill):
@@ -13,7 +16,7 @@ class SogouSearch(SearchSkill):
     def search(self, query: str, max_results: int = 50) -> list[dict]:
         self._ensure_browser()
         url = self.search_url.format(query=quote(query))
-        print(f"  -> 正在搜狗搜索: {query}")
+        logger.info(f"  -> 正在搜狗搜索: {query}")
         self.page.goto(url)
         self.page.wait_for_timeout(3000)
 
@@ -64,7 +67,7 @@ class SogouSearch(SearchSkill):
                 if results:
                     break
 
-        print(f"  [OK] 获取到 {len(results)} 条搜索结果")
+        logger.info(f"  [OK] 获取到 {len(results)} 条搜索结果")
         return results
 
     def open_result(self, url: str) -> str:

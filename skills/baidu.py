@@ -1,8 +1,11 @@
 """百度搜索技能 (Playwright + DOM JavaScript) — 完善版"""
 
+import logging
 import time
 from urllib.parse import quote
 from skills.base import SearchSkill
+
+logger = logging.getLogger(__name__)
 
 
 class BaiduSearch(SearchSkill):
@@ -96,7 +99,7 @@ class BaiduSearch(SearchSkill):
         max_pages = (max_results + 9) // 10 if max_results > 0 else 5
         max_pages = min(max_pages, 5)
 
-        print(f"  -> 正在百度搜索: {query}  (最多 {max_results} 条/{max_pages} 页)")
+        logger.info(f"  -> 正在百度搜索: {query}  (最多 {max_results} 条/{max_pages} 页)")
 
         # 先用 desktop 版搜索
         desktop_ok = True
@@ -126,9 +129,9 @@ class BaiduSearch(SearchSkill):
             # ===== 检测验证码 =====
             if self._check_captcha():
                 if self._recover_from_captcha(page_num):
-                    print(f"  [OK] 验证解除")
+                    logger.info(f"  [OK] 验证解除")
                 else:
-                    print(f"  [X] 第{page_num+1}页验证无法跳过，停止翻页")
+                    logger.warning(f"  [X] 第{page_num+1}页验证无法跳过，停止翻页")
                     desktop_ok = False
                     break
 
@@ -150,21 +153,21 @@ class BaiduSearch(SearchSkill):
                     pass
 
             page_count = len(page_results)
-            print(f"  第{page_num+1}页: {page_count} 条 (累计 {len(all_results)}/{max_results})")
+            logger.info(f"  第{page_num+1}页: {page_count} 条 (累计 {len(all_results)}/{max_results})")
             page_num += 1
 
-        print(f"  [OK] 共获取 {len(all_results)} 条 (来自 {page_num} 页)")
+        logger.info(f"  [OK] 共获取 {len(all_results)} 条 (来自 {page_num} 页)")
 
         # 用手机版百度搜索补充获取 AI 摘要中的电话
         # （桌面版 headless 浏览器经常拿不到百度企业信息卡片）
         try:
             mobile_phones = self._mobile_search_supplement(query)
             if mobile_phones:
-                print(f"  [手机版] AI摘要补充: {', '.join(mobile_phones)}")
+                logger.info(f"  [手机版] AI摘要补充: {', '.join(mobile_phones)}")
                 # 追加到搜索页文本中，方便 main.py 提取
                 self._search_page_html = (self._search_page_html or '') + '\n' + '\n'.join(mobile_phones)
         except Exception as e:
-            print(f"  [!] 手机版搜索失败: {e}")
+            logger.warning(f"  [!] 手机版搜索失败: {e}")
 
         return all_results[:max_results]
 
@@ -221,7 +224,7 @@ class BaiduSearch(SearchSkill):
             return True
         except Exception as e:
             err = str(e)[:80].encode('gbk', errors='replace').decode('gbk')
-            print(f"  [!] 页面加载异常: {err}")
+            logger.warning(f"  [!] 页面加载异常: {err}")
             return False
 
     def _check_captcha(self) -> bool:
@@ -235,7 +238,7 @@ class BaiduSearch(SearchSkill):
         """多策略尝试解除验证码"""
         for attempt in range(3):
             if attempt == 0:
-                print(f"  [!] 刷新页面...")
+                logger.info(f"  [!] 刷新页面...")
                 try:
                     self.page.reload()
                     self.page.wait_for_timeout(3000)
@@ -244,14 +247,14 @@ class BaiduSearch(SearchSkill):
             elif attempt == 1:
                 pn = page_num * 10
                 url = self.search_url.format(query=quote(self._last_query), pn=pn)
-                print(f"  [!] JS跳转重试...")
+                logger.info(f"  [!] JS跳转重试...")
                 try:
                     self.page.evaluate(f"window.location.href='{url}'")
                     self.page.wait_for_timeout(5000)
                 except Exception:
                     pass
             else:
-                print(f"  [!] 等待10秒后最后尝试...")
+                logger.info(f"  [!] 等待10秒后最后尝试...")
                 time.sleep(10)
                 try:
                     self.page.reload()
@@ -264,7 +267,7 @@ class BaiduSearch(SearchSkill):
 
         # === 终极手段：新建浏览器上下文直接打开目标页 ===
         # （复用已有浏览器实例开新 context，避免 Playwright 嵌套限制）
-        print(f"  [!] 尝试新浏览器上下文直接打开第{page_num+1}页...")
+        logger.info(f"  [!] 尝试新浏览器上下文直接打开第{page_num+1}页...")
         try:
             pn = page_num * 10
             target_url = self.search_url.format(
@@ -291,7 +294,7 @@ class BaiduSearch(SearchSkill):
                 has_captcha = 'captcha' in fresh_page.url.lower()
 
             if not has_captcha:
-                print(f"  [OK] 新上下文成功加载第{page_num+1}页！")
+                logger.info(f"  [OK] 新上下文成功加载第{page_num+1}页！")
                 # 关闭旧页面，替换为新的
                 self._page.close()
                 self._page = fresh_page
@@ -300,7 +303,7 @@ class BaiduSearch(SearchSkill):
 
             fresh_ctx.close()
         except Exception as fresh_e:
-            print(f"  [!] 新上下文也失败: {fresh_e}")
+            logger.warning(f"  [!] 新上下文也失败: {fresh_e}")
 
         return False
 
@@ -319,10 +322,10 @@ class BaiduSearch(SearchSkill):
         try:
             next_url = self.page.evaluate(self.NEXT_PAGE_JS)
             if not next_url:
-                print(f"  [!] 没有下一页")
+                logger.info(f"  [!] 没有下一页")
                 return False
 
-            print(f"  -> 翻到下一页...")
+            logger.info(f"  -> 翻到下一页...")
             # 方法1: 点击按钮
             try:
                 btn = self.page.locator('a.n')
@@ -338,5 +341,5 @@ class BaiduSearch(SearchSkill):
             self.page.wait_for_timeout(4000)
             return True
         except Exception as e:
-            print(f"  [!] 翻页失败: {e}")
+            logger.warning(f"  [!] 翻页失败: {e}")
             return False
