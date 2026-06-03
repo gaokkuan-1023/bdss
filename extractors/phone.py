@@ -128,8 +128,8 @@ class PhoneExtractor:
                     if num_clean not in seen:
                         seen.add(num_clean)
                         phones.append(p['number'])
-                # 400号码
-                elif num_clean.startswith('400') and len(num_clean) == 10:
+                # 400/800 服务热线
+                elif num_clean.startswith(('400', '800')) and len(num_clean) == 10:
                     if num_clean not in seen:
                         seen.add(num_clean)
                         phones.append(p['number'])
@@ -148,8 +148,8 @@ class PhoneExtractor:
             elif num_clean.startswith('0') and 10 <= len(num_clean) <= 12:
                 seen.add(num_clean)
                 phones.append(p['number'])
-            # 400
-            elif num_clean.startswith('400') and len(num_clean) == 10:
+            # 400/800
+            elif num_clean.startswith(('400', '800')) and len(num_clean) == 10:
                 seen.add(num_clean)
                 phones.append(p['number'])
 

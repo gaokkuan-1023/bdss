@@ -1,0 +1,23 @@
+# ============================================
+# Render.com 一键部署配置
+# ============================================
+# 1. Fork 此仓库
+# 2. 在 Render Dashboard 点击 "New +" → "Web Service"
+# 3. 连接你的 GitHub 仓库
+# 4. Render 会自动读取此文件并部署
+# ============================================
+
+services:
+  - type: web
+    name: bdss-api
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      python -m playwright install chromium
+    startCommand: python api_server.py --port $PORT
+    envVars:
+      - key: BDSS_API_TOKEN
+        sync: false  # 在 Render Dashboard 手动设置
+      - key: PYTHONUNBUFFERED
+        value: 1

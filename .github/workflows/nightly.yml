@@ -1,0 +1,46 @@
+name: Nightly Search Test
+
+on:
+  schedule:
+    - cron: '0 22 * * *'  # 每天 UTC 22:00（北京时间 06:00）
+  workflow_dispatch:       # 也支持手动触发
+
+jobs:
+  nightly-search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install chromium
+
+      - name: 实时搜索测试（单个公司）
+        run: |
+          python main.py "字节跳动" --engine baidu --max 1 --delay 3000 --verbose 2>&1 | tail -20
+          echo "✅ 单引擎搜索完成"
+
+      - name: 实时搜索测试（多引擎）
+        run: |
+          python main.py "阿里巴巴" --all --max 1 --delay 1000 --verbose 2>&1 | tail -20
+          echo "✅ 多引擎搜索完成"
+
+      - name: 电话提取完整性
+        run: |
+          python -c "
+          from extractors.phone import PhoneExtractor
+          from utils.helpers import export_csv
+          pe = PhoneExtractor()
+          
+          # 验证核心功能正常
+          r = pe.extract('手机:13800138000, 座机:010-88886666, 热线:400-123-4567')
+          assert len(r) == 3
+          print(f'✅ 提取正常: {r}')
+          "

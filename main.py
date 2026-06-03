@@ -2,13 +2,14 @@
 公司联系电话爬虫 - 主入口
 
 支持搜索引擎: baidu / google / bing / sogou / baidumap
-多引擎合并搜索: --all (自动跑 baidu + bing + sogou，合并结果去重)
+多引擎合并搜索: --all (自动并行跑 baidu + bing + sogou，合并结果去重)
 """
 
 import argparse
 import logging
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -21,6 +22,7 @@ from skills.baidumap import query_baidu_map_poi as query_map_poi
 from extractors.phone import PhoneExtractor
 from utils.helpers import save_result, load_companies_from_file, export_csv
 from utils.helpers import setup_logger
+from utils.cache import SearchCache
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,9 @@ ENGINE_REGISTRY = {
 
 # 多引擎合并搜索时默认使用的引擎（跳过 google，需要代理）
 MULTI_ENGINES = ['baidu', 'bing', 'sogou']
+
+# 全局缓存实例
+_cache = SearchCache()
 
 
 def search_company(
@@ -295,42 +300,56 @@ def search_all_engines(
     proxy: str = None,
     verbose: bool = False,
     delay: int = 0,
+    cached: bool = True,
 ) -> dict:
     """
-    多引擎合并搜索：依次用 baidu → bing → sogou 搜索，合并结果去重。
+    多引擎并行搜索：同时跑 baidu → bing → sogou，合并结果去重自动去重。
+    缓存命中时跳过搜索直接返回。
     """
+    # 缓存命中检查
+    cache_key = "+".join(MULTI_ENGINES)
+    if cached:
+        cached_result = _cache.get(company_name, cache_key)
+        if cached_result:
+            return cached_result
+
     all_phones = {}
     per_engine = []
     engines_run = []
 
-    for eng in MULTI_ENGINES:
-        logger.info(f"{'#' * 60}")
-        logger.info(f"# 引擎: {eng}")
-        logger.info(f"{'#' * 60}")
-        result = search_company(
-            company_name=company_name,
-            engine=eng,
-            max_results=max_results,
-            headless=headless,
-            proxy=proxy,
-            verbose=verbose,
-            delay=delay,
-        )
-        per_engine.append({eng: result})
-        engines_run.append(eng)
-        for phone in result.get('phones', []):
-            if phone not in all_phones:
-                all_phones[phone] = []
-            # 合并来源
-            for src in result.get('sources', []):
-                if src['phone'] == phone:
-                    all_phones[phone].append(src)
+    def _run_engine(eng: str) -> dict | None:
+        """执行单个引擎搜索，异常时返回 None 不中断整体"""
+        try:
+            result = search_company(
+                company_name=company_name,
+                engine=eng,
+                max_results=max_results,
+                headless=headless,
+                proxy=proxy,
+                verbose=verbose,
+                delay=delay,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"  [X] 引擎 {eng} 搜索失败: {e}")
+            return None
 
-    # 构建合并结果
-    merged_sources = []
-    for phone, srcs in all_phones.items():
-        for s in srcs:
-            merged_sources.append(s)
+    logger.info(f"  并行启动 {len(MULTI_ENGINES)} 个引擎...")
+    with ThreadPoolExecutor(max_workers=len(MULTI_ENGINES)) as executor:
+        future_map = {executor.submit(_run_engine, eng): eng for eng in MULTI_ENGINES}
+        for future in as_completed(future_map):
+            eng = future_map[future]
+            result = future.result()
+            if result is None:
+                continue
+            per_engine.append({eng: result})
+            engines_run.append(eng)
+            for phone in result.get('phones', []):
+                if phone not in all_phones:
+                    all_phones[phone] = []
+                for src in result.get('sources', []):
+                    if src['phone'] == phone:
+                        all_phones[phone].append(src)
 
     merged = {
         "company": company_name,
@@ -338,9 +357,12 @@ def search_all_engines(
         "phone_count": len(all_phones),
         "engines_run": engines_run,
         "details": per_engine,
-        "sources": merged_sources,
+        "sources": [s for srcs in all_phones.values() for s in srcs],
         "engine": " + ".join(engines_run),
     }
+    # 写入缓存
+    if cached and engines_run:
+        _cache.set(company_name, cache_key, merged)
     return merged
 
 
@@ -375,6 +397,8 @@ def main():
     parser.add_argument('--proxy', help='代理地址')
     parser.add_argument('--delay', type=int, default=0,
                         help='请求间隔（毫秒），避免触发反爬')
+    parser.add_argument('--no-cache', action='store_true',
+                        help='禁用缓存，强制重新搜索')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='显示详细信息')
     parser.add_argument('--visible', action='store_true',
@@ -416,6 +440,7 @@ def main():
                 proxy=args.proxy,
                 verbose=args.verbose,
                 delay=args.delay,
+                cached=not args.no_cache,
             )
         else:
             result = search_company(

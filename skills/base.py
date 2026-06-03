@@ -39,7 +39,16 @@ class SearchSkill(ABC):
             if self.proxy:
                 launch_kwargs["proxy"] = {"server": self.proxy}
 
-            self._browser = p.chromium.launch(**launch_kwargs)
+            try:
+                self._browser = p.chromium.launch(**launch_kwargs)
+            except Exception as e:
+                err = str(e)
+                logger.error(f"Playwright 浏览器启动失败: {err}")
+                if "Executable doesn't exist" in err or "cannot find" in err:
+                    print("\n⚠️  Playwright Chromium 未安装！请运行:")
+                    print("   python -m playwright install chromium")
+                    print()
+                raise
             self._context = self._browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

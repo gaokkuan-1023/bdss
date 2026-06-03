@@ -87,6 +87,38 @@ def load_companies_from_file(filepath: str) -> list[str]:
     return companies
 
 
+def export_excel(company: str, phones: list[str], sources: list[dict], output_path: str) -> str:
+    """导出结果为 Excel 文件"""
+    from openpyxl import Workbook
+    path = Path(output_path)
+    if path.is_dir() or path.suffix == '':
+        safe_name = re.sub(r'[\\/:*?"<>|]', '_', company)
+        path = path / f"{safe_name}.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "电话列表"
+    ws.append(['电话', '类型', '来源URL', '来源标题', '警告'])
+    for phone in phones:
+        related = [s for s in sources if s['phone'] == phone]
+        if related:
+            for s in related:
+                ws.append([
+                    phone,
+                    '手机' if not phone.startswith('0') and not phone.startswith('4') else '固话' if phone.startswith('0') else '服务热线',
+                    s.get('url', ''),
+                    s.get('title', ''),
+                    s.get('warning', ''),
+                ])
+        else:
+            ws.append([phone, '', '', '', ''])
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 10
+    ws.column_dimensions['C'].width = 50
+    ws.column_dimensions['D'].width = 40
+    wb.save(str(path))
+    return str(path)
+
+
 def export_csv(company: str, phones: list[str], sources: list[dict], output_path: str) -> str:
     """导出结果为 CSV 文件"""
     import csv
