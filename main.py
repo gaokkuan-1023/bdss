@@ -20,6 +20,7 @@ from skills.baidu import BaiduSearch
 from skills.google import GoogleSearch
 from skills.bing import BingSearch
 from skills.sogou import SogouSearch
+from skills.ai import AISearch
 from skills.baidumap import query_baidu_map_poi as query_map_poi
 from extractors.phone import PhoneExtractor
 from utils.helpers import save_result, load_companies_from_file, export_csv
@@ -57,6 +58,7 @@ ENGINE_REGISTRY = {
     'google': GoogleSearch,
     'bing': BingSearch,
     'sogou': SogouSearch,
+    'ai': AISearch,
 }
 
 # 多引擎合并搜索时默认使用的引擎（跳过 google，需要代理）
@@ -468,7 +470,7 @@ def main():
     parser.add_argument('-f', '--file', help='公司名称列表文件（每行一个）')
     parser.add_argument('--engine', '-e', default='baidu',
                         choices=list(ENGINE_REGISTRY.keys()),
-                        help='搜索引擎 (默认: baidu)')
+                        help='搜索引擎 (默认: baidu，可选: ai)')
     parser.add_argument('--all', '-a', action='store_true',
                         help='多引擎合并搜索 (baidu + bing + sogou，自动去重)')
     parser.add_argument('--max', '-m', type=int, default=5,
