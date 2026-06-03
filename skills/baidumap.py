@@ -11,26 +11,19 @@ from extractors.phone import PhoneExtractor
 logger = logging.getLogger(__name__)
 
 _BASE = "https://map.baidu.com"
-# 优先从环境变量读取，无配置时使用空值（API通道会降级到页面抓取）
+# 优先从环境变量读取，其次 .env 文件；无配置时 API 通道降级到页面抓取
 _AK = os.environ.get("BAIDU_MAP_AK", "")
-
-
-def _get_ak() -> str:
-    """获取百度地图 API Key，优先环境变量，其次 .env 文件"""
-    ak = os.environ.get("BAIDU_MAP_AK", "")
-    if not ak:
-        # 尝试从 .env 文件加载
-        env_path = Path(__file__).parent.parent / ".env"
-        if env_path.exists():
-            try:
-                for line in env_path.read_text().splitlines():
-                    line = line.strip()
-                    if line.startswith("BAIDU_MAP_AK="):
-                        ak = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-            except Exception:
-                pass
-    return ak
+if not _AK:
+    _env = Path(__file__).parent.parent / ".env"
+    if _env.exists():
+        try:
+            for _line in _env.read_text().splitlines():
+                _line = _line.strip()
+                if _line.startswith("BAIDU_MAP_AK="):
+                    _AK = _line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+        except Exception:
+            pass
 
 
 def query_baidu_map_poi(company: str) -> dict:
@@ -80,7 +73,7 @@ def query_baidu_map_poi(company: str) -> dict:
         page.set_default_timeout(30000)
 
         # 直接打开搜索结果的静态页面
-        wd = urllib.parse.quote(company)
+        wd = quote(company)
         search_url = f"{_BASE}/search/{wd}"
         logger.info(f"    [百度地图] 打开: {search_url}")
         try:
