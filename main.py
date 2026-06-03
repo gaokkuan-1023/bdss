@@ -7,10 +7,12 @@
 
 import argparse
 import logging
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any, List, Optional, TypedDict
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -64,6 +66,61 @@ MULTI_ENGINES = ['baidu', 'bing', 'sogou']
 _cache = SearchCache()
 
 
+# ===== 类型系统 =====
+
+class SearchResult(TypedDict):
+    """统一搜索结果类型"""
+    company: str
+    phones: List[str]
+    phone_count: int
+    engine: str
+    sources: List[dict]
+    geo_check: dict
+
+
+# ===== 地理校验 =====
+
+# 山东城市区号对照表
+_CITY_CODES: dict[str, list[str]] = {
+    '枣庄': ['0632'], '济南': ['0531'], '青岛': ['0532'], '潍坊': ['0536'],
+    '淄博': ['0533'], '德州': ['0534'], '烟台': ['0535'], '济宁': ['0537'],
+    '泰安': ['0538'], '临沂': ['0539'], '菏泽': ['0530'], '威海': ['0631'],
+    '日照': ['0633'], '聊城': ['0635'], '滨州': ['0543'],
+    '北京': ['010'], '上海': ['021'], '广州': ['020'],
+    '深圳': ['0755'], '杭州': ['0571'], '南京': ['025'],
+    '成都': ['028'], '武汉': ['027'], '重庆': ['023'],
+}
+
+
+def geo_check(phones: list[str], page_texts: list[str]) -> dict:
+    """校验电话区号与页面城市是否匹配"""
+    # 提取城市
+    cities: set[str] = set()
+    for t in page_texts:
+        for m in re.findall(r'([\u4e00-\u9fa5]{2,4})市', t):
+            if m in _CITY_CODES:
+                cities.add(m)
+    # 收集有效区号前缀
+    valid_prefixes: set[str] = set()
+    for c in cities:
+        valid_prefixes.update(_CITY_CODES[c])
+    # 分组
+    valid, suspicious = [], []
+    for p in phones:
+        cl = p.replace('-', '').replace(' ', '')
+        if not cl.startswith('0'):
+            valid.append(p)
+            continue
+        if not valid_prefixes:
+            suspicious.append(p)
+            continue
+        if any(cl[:ln] in valid_prefixes for ln in [4, 3]):
+            valid.append(p)
+        else:
+            suspicious.append(p)
+    return {"valid": valid, "suspicious": suspicious, "cities": list(cities)}
+
+
 def search_company(
     company_name: str,
     engine: str = 'baidu',
@@ -72,6 +129,8 @@ def search_company(
     proxy: str = None,
     verbose: bool = False,
     delay: int = 0,  # 请求间隔（毫秒）
+    cached: bool = True,
+    shared_browser=None,
 ) -> dict:
     """
     搜索公司并提取联系电话。
@@ -84,7 +143,15 @@ def search_company(
         logger.error(f"不支持的搜索引擎: {engine}")
         return {"company": company_name, "phones": [], "sources": [], "engine": engine}
 
-    crawler = engine_cls(headless=headless, proxy=proxy)
+    # ===== 缓存命中检查（单引擎模式）=====
+    cache_key = f"single:{engine}"
+    if cached:
+        cached_result = _cache.get(company_name, cache_key)
+        if cached_result:
+            return cached_result
+
+    crawler = engine_cls(headless=headless, proxy=proxy,
+                         shared_browser=shared_browser)
     extractor = PhoneExtractor(prefer_nearby=True)
 
     all_phones = set()
@@ -119,7 +186,6 @@ def search_company(
             logger.info(f"  [!] 搜索结果页未找到电话（AI摘要可能未加载），重试搜索...")
             crawler.close()
             opened_pages, search_page_text = [], None
-            # 等待后重试
             time.sleep(3)
             crawler2 = engine_cls(headless=headless, proxy=proxy)
             try:
@@ -186,44 +252,27 @@ def search_company(
         "engine": engine,
     }
 
-    # ===== 地理校验 =====
+    # ===== 地理校验（调用公共函数）=====
     try:
-        import re
         all_page_texts = [p.get('page_text','') for p in opened_pages if p.get('page_text')] + [search_page_text or '']
-        ccd = {'枣庄':['0632'],'济南':['0531'],'青岛':['0532'],'潍坊':['0536'],
-               '淄博':['0533'],'德州':['0534'],'烟台':['0535'],'济宁':['0537'],
-               '泰安':['0538'],'临沂':['0539'],'菏泽':['0530'],'威海':['0631'],
-               '日照':['0633'],'聊城':['0635'],'滨州':['0543']}
-        cts = set()
-        for t in all_page_texts:
-            for m in re.findall(r'([\u4e00-\u9fa5]{2,4})市', t):
-                if m in ccd: cts.add(m)
-        vc = set()
-        for c in cts: vc.update(ccd[c])
-        vld, sus = [], []
-        for p in all_phones:
-            cl = p.replace('-','').replace(' ','')
-            if not cl.startswith('0'): vld.append(p); continue
-            if not vc: sus.append(p); continue
-            if any(cl[:ln] in vc for ln in [4,3]): vld.append(p)
-            else: sus.append(p)
-        if cts:
-            logger.info(f"  [地理校验] 检测到城市: {', '.join(cts)}")
-            if sus:
-                logger.warning(f"  [可疑] 以下号码区号不匹配: {', '.join(sus)}")
-                for s in sus:
+        gc = geo_check(list(all_phones), all_page_texts)
+        if gc['cities']:
+            logger.info(f"  [地理校验] 检测到城市: {', '.join(gc['cities'])}")
+            if gc['suspicious']:
+                logger.warning(f"  [可疑] 以下号码区号不匹配: {', '.join(gc['suspicious'])}")
+                for s in gc['suspicious']:
                     for src in result['sources']:
                         if src['phone'] == s: src['warning'] = '区号不匹配'
-            if vld:
-                logger.info(f"  [匹配] {', '.join(vld)}")
+            if gc['valid']:
+                logger.info(f"  [匹配] {', '.join(gc['valid'])}")
         else:
             logger.info(f"  [!] 未检测到城市，跳过区号校验")
-        result['geo_check'] = {"valid":vld,"suspicious":sus,"cities":list(cts)}
+        result['geo_check'] = gc
     except Exception as ge:
         logger.warning(f"  [!] 地理校验异常: {ge}")
         result['geo_check'] = {"valid":[],"suspicious":[],"cities":[]}
 
-    # ===== 搜索词扩展：电话不足时自动补充搜索 =====
+    # ===== 搜索词扩展 =====
     if len(all_phones) < 2 and engine != 'google':
         for suffix, keyword in SEARCH_EXPANSIONS:
             expanded = suffix.replace("{公司}", company_name)
@@ -272,7 +321,6 @@ def search_company(
         logger.info(f"  [百度地图] 补充查询POI数据...")
         map_r = query_map_poi(company_name)
         if map_r.get('all_phones'):
-            # 先统计新增电话数（此时还没加入 all_phones）
             new_count = len([p for p in map_r['all_phones'] if p not in all_phones])
             for p in map_r['all_phones']:
                 if p not in all_phones:
@@ -285,10 +333,13 @@ def search_company(
             if map_r.get('address'):
                 logger.info(f"  [百度地图] 地址: {map_r['address']}")
             logger.info(f"  [百度地图] 新增 {new_count} 个电话")
-            # 更新 result
             result['phones'] = sorted(all_phones)
             result['phone_count'] = len(all_phones)
             result['sources'] = sources
+
+    # ===== 写入缓存（单引擎模式）=====
+    if cached:
+        _cache.set(company_name, cache_key, result)
 
     return result
 
@@ -303,7 +354,7 @@ def search_all_engines(
     cached: bool = True,
 ) -> dict:
     """
-    多引擎并行搜索：同时跑 baidu → bing → sogou，合并结果去重自动去重。
+    多引擎并行搜索：共享一个浏览器实例加速启动。
     缓存命中时跳过搜索直接返回。
     """
     # 缓存命中检查
@@ -328,11 +379,30 @@ def search_all_engines(
                 proxy=proxy,
                 verbose=verbose,
                 delay=delay,
+                cached=False,  # 子引擎不写缓存，由合并结果写
+                shared_browser=_shared_browser,
             )
             return result
         except Exception as e:
             logger.error(f"  [X] 引擎 {eng} 搜索失败: {e}")
             return None
+
+    # 创建共享浏览器（所有引擎共用一个 Playwright 实例）
+    _shared_browser = None
+    _shared_pw = None
+    try:
+        from playwright.sync_api import sync_playwright
+        pw = sync_playwright()
+        _shared_pw = pw
+        p = pw.start()
+        launch_kwargs = {"headless": headless}
+        if proxy:
+            launch_kwargs["proxy"] = {"server": proxy}
+        _shared_browser = p.chromium.launch(**launch_kwargs)
+    except Exception as e:
+        logger.warning(f"共享浏览器启动失败，各引擎将独立启动: {e}")
+        _shared_browser = None
+        _shared_pw = None
 
     logger.info(f"  并行启动 {len(MULTI_ENGINES)} 个引擎...")
     with ThreadPoolExecutor(max_workers=len(MULTI_ENGINES)) as executor:
@@ -350,6 +420,18 @@ def search_all_engines(
                 for src in result.get('sources', []):
                     if src['phone'] == phone:
                         all_phones[phone].append(src)
+
+    # 关闭共享浏览器
+    if _shared_browser:
+        try:
+            _shared_browser.close()
+        except Exception:
+            pass
+    if _shared_pw:
+        try:
+            _shared_pw.stop()
+        except Exception:
+            pass
 
     merged = {
         "company": company_name,

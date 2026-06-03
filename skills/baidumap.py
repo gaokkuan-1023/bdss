@@ -1,5 +1,9 @@
 """百度地图Skill — 通过官方API查询POI电话"""
-import os, sys, json
+import json
+import os
+import re
+import sys
+import urllib.request
 import logging
 from pathlib import Path
 from urllib.parse import quote
@@ -40,7 +44,6 @@ def query_baidu_map_poi(company: str) -> dict:
     search_url = (f"https://api.map.baidu.com/place/v2/search"
                   f"?query={wd}&region=%E5%85%A8%E5%9B%BD&output=json&ak={_AK}")
     try:
-        import urllib.request
         req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         raw = resp.read()
@@ -98,8 +101,7 @@ def query_baidu_map_poi(company: str) -> dict:
         # 提取地址
         for line in text.split("\n"):
             if "地址" in line or "位置" in line:
-                import re as _re
-                m = _re.search(r"地址[：:]\s*(.+)", line)
+                m = re.search(r"地址[：:]\s*(.+)", line)
                 if m:
                     result["address"] = m.group(1).strip()
                     break

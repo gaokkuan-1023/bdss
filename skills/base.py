@@ -12,6 +12,14 @@ except ImportError:
     HAS_STEALTH = False
 logger = logging.getLogger(__name__)
 
+# 默认 UA / Viewport（各引擎共享）
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+_DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
+
 
 class SearchSkill(ABC):
     """搜索引擎技能基类 (Playwright 引擎)"""
@@ -19,53 +27,51 @@ class SearchSkill(ABC):
     engine_name = "base"
 
     def __init__(self, headless: bool = True, proxy: Optional[str] = None,
-                 timeout: float = 120):
+                 timeout: float = 120, shared_browser: Optional[Browser] = None,
+                 shared_pw=None):
         self.headless = headless
         self.proxy = proxy
         self.timeout = timeout * 1000  # Playwright uses ms
-        self._browser: Optional[Browser] = None
+        self._browser = shared_browser
+        self._pw = shared_pw
+        self._owns_browser = shared_browser is None  # 自己启动的才负责关闭
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
-        self._pw = None
         self._started = False
 
     def _ensure_browser(self):
         """确保浏览器已启动"""
         if not self._started:
-            pw = sync_playwright()
-            p = pw.start()
-            self._pw = p  # 先赋值，确保异常时也能 stop
-            launch_kwargs = {"headless": self.headless}
-            if self.proxy:
-                launch_kwargs["proxy"] = {"server": self.proxy}
-
-            try:
-                self._browser = p.chromium.launch(**launch_kwargs)
-            except Exception as e:
-                err = str(e)
-                logger.error(f"Playwright 浏览器启动失败: {err}")
-                if "Executable doesn't exist" in err or "cannot find" in err:
-                    print("\n⚠️  Playwright Chromium 未安装！请运行:")
-                    print("   python -m playwright install chromium")
-                    print()
-                raise
+            # === 自己启动浏览器（无共享实例时）===
+            if self._owns_browser:
+                pw = sync_playwright()
+                p = pw.start()
+                self._pw = p
+                launch_kwargs = {"headless": self.headless}
+                if self.proxy:
+                    launch_kwargs["proxy"] = {"server": self.proxy}
+                try:
+                    self._browser = p.chromium.launch(**launch_kwargs)
+                except Exception as e:
+                    err = str(e)
+                    logger.error(f"Playwright 浏览器启动失败: {err}")
+                    if "Executable doesn't exist" in err or "cannot find" in err:
+                        print("\n⚠️  Playwright Chromium 未安装！请运行:")
+                        print("   python -m playwright install chromium")
+                        print()
+                    raise
+            # === 从共享浏览器创建 context + page ===
             self._context = self._browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/125.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1920, "height": 1080},
+                user_agent=_DEFAULT_UA,
+                viewport=_DEFAULT_VIEWPORT,
                 locale="zh-CN",
             )
             self._page = self._context.new_page()
-            # 注入反检测 stealth（隐藏自动化痕迹）
             if HAS_STEALTH:
                 try:
                     _stealth.apply_stealth_sync(self._page)
                 except Exception:
                     pass
-            # 设置页面加载超时（毫秒）
             self._page.set_default_timeout(self.timeout)
             self._started = True
 
@@ -77,31 +83,19 @@ class SearchSkill(ABC):
 
     @abstractmethod
     def search(self, query: str, max_results: int = 50) -> list[dict]:
-        """
-        在搜索引擎中搜索关键词，返回搜索结果列表。
-
-        Args:
-            query: 搜索关键词
-            max_results: 最多返回结果数（默认 50，-1 表示不限）
-        """
         ...
 
     @abstractmethod
     def open_result(self, url: str) -> str:
-        """
-        打开搜索结果页面，返回页面文本。
-        """
         ...
 
     def search_and_open(self, query: str, max_results: int = 5) -> list[dict]:
         """搜索并打开前 N 个结果"""
-        results = self.search(query, max_results=50)  # 搜尽量多的结果
+        results = self.search(query, max_results=50)
         opened = []
 
-        # 获取搜索结果页面的渲染文本（比 page.content() 更完整，含 JS 动态内容）
         search_page_text = ''
         try:
-            # 用 evaluate 获取渲染后的全部文本
             search_page_text = self.page.evaluate('() => document.body.innerText')
         except Exception:
             try:
@@ -109,14 +103,11 @@ class SearchSkill(ABC):
             except Exception:
                 pass
 
-        # 合并手机版补充搜索的电话（如果有的话）
         if hasattr(self, '_search_page_html') and self._search_page_html:
             if not search_page_text:
                 search_page_text = self._search_page_html
             else:
-                # 手机版数据可能比桌面版完整，追加合并
                 extra = self._search_page_html.strip()
-                # 不硬截断，只在太长时取末尾（手机版追加的电话在最后）
                 if len(extra) > 3000:
                     extra = extra[-3000:]
                 search_page_text = search_page_text + '\n' + extra
@@ -133,18 +124,30 @@ class SearchSkill(ABC):
         return opened, search_page_text
 
     def close(self):
-        """关闭浏览器"""
-        try:
-            if self._context:
-                self._context.close()
-            if self._browser:
-                self._browser.close()
-            if self._pw:
-                self._pw.stop()
-        except Exception:
-            pass
-        self._browser = None
+        """关闭浏览器（仅自己启动的才关闭）"""
+        if self._owns_browser:
+            try:
+                if self._context:
+                    self._context.close()
+                if self._browser:
+                    self._browser.close()
+                if self._pw:
+                    self._pw.stop()
+            except Exception:
+                pass
+        else:
+            # 共享浏览器：只关闭 context+page，不关 browser
+            try:
+                if self._context:
+                    self._context.close()
+            except Exception:
+                pass
+            try:
+                if self._page:
+                    self._page.close()
+            except Exception:
+                pass
         self._context = None
         self._page = None
-        self._pw = None
+        # 不重置 _browser / _pw（共享实例不归我们管）
         self._started = False
