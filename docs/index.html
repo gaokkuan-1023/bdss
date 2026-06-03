@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BDSS - 公司联系电话爬虫</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --border: #334155;
+    --accent: #38bdf8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  /* Nav */
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  nav .logo { font-weight: 700; font-size: 1.2rem; color: var(--accent); }
+  nav .logo span { color: var(--muted); font-weight: 400; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; margin-left: 24px; transition: color .2s; }
+  nav a:hover { color: var(--text); }
+
+  /* Hero */
+  .hero { text-align: center; padding: 80px 0 60px; }
+  .hero h1 { font-size: 2.8rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero p { color: var(--muted); font-size: 1.15rem; max-width: 600px; margin: 16px auto 32px; }
+  .hero .badge { display: inline-block; background: rgba(56,189,248,.15); color: var(--accent); padding: 4px 12px; border-radius: 999px; font-size: .8rem; margin-bottom: 16px; }
+
+  .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 24px; border-radius: 8px; font-size: .95rem; font-weight: 600; text-decoration: none; transition: all .2s; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+  .btn-outline { border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* Sections */
+  section { padding: 60px 0; }
+  section h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
+  section h2::before { content: ''; display: inline-block; width: 4px; height: 24px; background: var(--accent); border-radius: 2px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+  .card h3 { font-size: 1.1rem; margin-bottom: 12px; color: var(--accent); }
+
+  /* Feature Grid */
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .feature { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .feature .icon { font-size: 1.8rem; margin-bottom: 12px; }
+  .feature h3 { font-size: 1rem; margin-bottom: 8px; }
+  .feature p { color: var(--muted); font-size: .88rem; }
+
+  /* Code */
+  code, pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; background: #1e293b; border-radius: 6px; }
+  code { padding: 2px 6px; font-size: .85em; }
+  pre { padding: 16px; overflow-x: auto; font-size: .85rem; line-height: 1.6; border: 1px solid var(--border); margin: 12px 0; }
+  pre .comment { color: #6b7280; }
+  pre .keyword { color: #93c5fd; }
+  pre .string { color: #86efac; }
+  pre .func { color: #fbbf24; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; }
+  td { font-size: .9rem; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Footer */
+  footer { text-align: center; padding: 40px 0; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+
+  /* Engine badges */
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: 600; }
+  .tag-easy { background: rgba(34,197,94,.15); color: #22c55e; }
+  .tag-medium { background: rgba(234,179,8,.15); color: #eab308; }
+  .tag-hard { background: rgba(239,68,68,.15); color: #ef4444; }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 2rem; }
+    nav a { margin-left: 12px; font-size: .8rem; }
+    .features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="logo">BDSS <span>· 电话爬虫</span></div>
+  <div>
+    <a href="#features">特性</a>
+    <a href="#usage">使用</a>
+    <a href="#engines">引擎</a>
+    <a href="#api">API</a>
+    <a href="https://github.com/gaokkuan-1023/bdss" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="badge">🐍 Python · Playwright · 多引擎</div>
+  <h1>公司联系电话爬虫</h1>
+  <p>基于 DrissionPage + Playwright 双引擎，支持百度、谷歌、必应、搜狗、百度地图多引擎搜索，自动去重、地理校验、CSV 导出。</p>
+  <div class="btn-group">
+    <a class="btn btn-primary" href="https://github.com/gaokkuan-1023/bdss" target="_blank">📦 GitHub</a>
+    <a class="btn btn-outline" href="#usage">📖 快速开始</a>
+    <a class="btn btn-outline" href="#api">🔌 API</a>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Features -->
+<section id="features">
+  <h2>核心特性</h2>
+  <div class="features">
+    <div class="feature">
+      <div class="icon">🔍</div>
+      <h3>多引擎搜索</h3>
+      <p>百度、必应、搜狗、谷歌、百度地图 POI 五引擎，支持 <code>--all</code> 合并去重</p>
+    </div>
+    <div class="feature">
+      <div class="icon">🛡️</div>
+      <h3>反爬对抗</h3>
+      <p>注入 playwright-stealth、模拟真人浏览行为、自动验证码检测与恢复</p>
+    </div>
+    <div class="feature">
+      <div class="icon">📍</div>
+      <h3>地理校验</h3>
+      <p>自动检测页面中出现的城市，校验电话区号是否匹配，标记可疑号码</p>
+    </div>
+    <div class="feature">
+      <div class="icon">🧩</div>
+      <h3>搜索扩展</h3>
+      <p>电话不足时自动补充 "公司名+电话/联系方式" 搜索，调用百度地图 POI API</p>
+    </div>
+    <div class="feature">
+      <div class="icon">📄</div>
+      <h3>多格式导出</h3>
+      <p>JSON / CSV 输出，带来源 URL、标题、可信度、警告标记</p>
+    </div>
+    <div class="feature">
+      <div class="icon">🐳</div>
+      <h3>Docker 部署</h3>
+      <p>预装 Playwright + Chromium 的 slim 镜像，一行命令启动</p>
+    </div>
+  </div>
+</section>
+
+<!-- Usage -->
+<section id="usage">
+  <h2>快速开始</h2>
+
+  <div class="card">
+    <h3>📦 安装</h3>
+    <pre><span class="comment"># 克隆仓库</span>
+git clone https://github.com/gaokkuan-1023/bdss.git
+cd bdss
+
+<span class="comment"># 安装依赖</span>
+pip install -r requirements.txt
+python -m playwright install chromium</pre>
+  </div>
+
+  <div class="card">
+    <h3>🔍 基础搜索</h3>
+    <pre><span class="comment"># 单个公司（默认百度引擎）</span>
+python main.py <span class="string">"深圳腾讯计算机系统有限公司"</span>
+
+<span class="comment"># 指定引擎 + 详细输出</span>
+python main.py <span class="string">"阿里巴巴"</span> --engine bing --verbose
+
+<span class="comment"># 五引擎合并搜索（推荐）</span>
+python main.py <span class="string">"山东华派集团有限公司"</span> --all --max 5 --delay 1500 -v -o result.json</pre>
+  </div>
+
+  <div class="card">
+    <h3>📋 批量搜索</h3>
+    <pre><span class="comment"># companies.txt（每行一个公司名）</span>
+python main.py -f companies.txt --all --delay 2000 --output ./results/</pre>
+  </div>
+
+  <div class="card">
+    <h3>🐳 Docker</h3>
+    <pre>docker build -t bdss .
+docker run --rm bdss <span class="string">"字节跳动"</span> --all --delay 1000</pre>
+  </div>
+
+  <h3 style="margin-top: 32px;">参数说明</h3>
+  <table>
+    <tr><th>参数</th><th>说明</th><th>默认</th></tr>
+    <tr><td><code>--engine / -e</code></td><td>搜索引擎选择</td><td><code>baidu</code></td></tr>
+    <tr><td><code>--all / -a</code></td><td>多引擎合并搜索</td><td>—</td></tr>
+    <tr><td><code>--max / -m</code></td><td>每引擎打开结果数</td><td><code>5</code></td></tr>
+    <tr><td><code>--delay</code></td><td>请求间隔（毫秒）</td><td><code>0</code></td></tr>
+    <tr><td><code>--output / -o</code></td><td>输出 JSON 路径</td><td>当前目录</td></tr>
+    <tr><td><code>--csv</code></td><td>同时导出 CSV</td><td>—</td></tr>
+    <tr><td><code>--proxy</code></td><td>代理地址</td><td>—</td></tr>
+    <tr><td><code>--verbose / -v</code></td><td>详细信息（DEBUG 级别）</td><td>—</td></tr>
+    <tr><td><code>--visible</code></td><td>显示浏览器窗口（调试）</td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- Engines -->
+<section id="engines">
+  <h2>搜索引擎支持</h2>
+  <table>
+    <tr><th>引擎</th><th>类名</th><th>反爬难度</th><th>需要代理</th><th>说明</th></tr>
+    <tr>
+      <td><code>baidu</code></td>
+      <td>BaiduSearch</td>
+      <td><span class="tag tag-medium">中</span></td>
+      <td>否</td>
+      <td>主引擎，含手机版补充、多页翻页、验证码恢复</td>
+    </tr>
+    <tr>
+      <td><code>google</code></td>
+      <td>GoogleSearch</td>
+      <td><span class="tag tag-hard">高</span></td>
+      <td>是</td>
+      <td>境外搜索，需科学上网</td>
+    </tr>
+    <tr>
+      <td><code>bing</code></td>
+      <td>BingSearch</td>
+      <td><span class="tag tag-easy">低</span></td>
+      <td>否</td>
+      <td>必应中文版，结果稳定</td>
+    </tr>
+    <tr>
+      <td><code>sogou</code></td>
+      <td>SogouSearch</td>
+      <td><span class="tag tag-medium">中</span></td>
+      <td>否</td>
+      <td>搜狗搜索</td>
+    </tr>
+    <tr>
+      <td><code>baidumap</code></td>
+      <td>query_map_poi</td>
+      <td><span class="tag tag-easy">低</span></td>
+      <td>否</td>
+      <td>百度地图 POI（API + 页面双通道）</td>
+    </tr>
+  </table>
+</section>
+
+<!-- API -->
+<section id="api">
+  <h2>HTTP API 服务</h2>
+
+  <div class="card">
+    <h3>🔌 启动服务</h3>
+    <pre>pip install flask          <span class="comment"># 首次安装</span>
+python api_server.py       <span class="comment"># 默认 :5000</span></pre>
+  </div>
+
+  <div class="card">
+    <h3>📡 接口</h3>
+
+    <p style="margin-bottom: 8px;"><strong><code>POST /api/search</code></strong> — 搜索公司电话</p>
+    <pre><span class="comment"># 请求</span>
+curl -X POST http://localhost:5000/api/search \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{
+    "company": "深圳腾讯",
+    "engine": "all",
+    "max_results": 5,
+    "delay": 1500
+  }'</span>
+
+<span class="comment"># 响应</span>
+{
+  <span class="string">"success"</span>: true,
+  <span class="string">"data"</span>: {
+    <span class="string">"company"</span>: <span class="string">"深圳腾讯"</span>,
+    <span class="string">"phones"</span>: [<span class="string">"0755-86013388"</span>, <span class="string">"400-670-0700"</span>],
+    <span class="string">"phone_count"</span>: 2,
+    <span class="string">"engine"</span>: <span class="string">"baidu + bing + sogou"</span>,
+    <span class="string">"geo_check"</span>: { ... }
+  }
+}</pre>
+  </div>
+
+  <div class="card">
+    <h3>🏥 健康检查</h3>
+    <pre><span class="comment"># 请求</span>
+curl http://localhost:5000/api/health
+
+<span class="comment"># 响应</span>
+{ <span class="string">"status"</span>: <span class="string">"ok"</span>, <span class="string">"version"</span>: <span class="string">"1.0.0"</span> }</pre>
+  </div>
+</section>
+
+<!-- Project Structure -->
+<section>
+  <h2>项目结构</h2>
+  <pre>bdss/
+├── main.py              ← CLI 入口
+├── api_server.py        ← 🆕 HTTP API 服务
+├── requirements.txt     ← 依赖
+├── Dockerfile           ← 容器化
+├── LICENSE              ← MIT
+├── .env.example         ← 环境变量模板
+├── .github/workflows/
+│   └── ci.yml           ← CI 流水线
+├── skills/
+│   ├── base.py          ← 基类 (Playwright)
+│   ├── baidu.py         ← 百度搜索
+│   ├── baidumap.py      ← 百度地图 POI
+│   ├── bing.py / google.py / sogou.py
+├── extractors/
+│   └── phone.py         ← 电话提取器
+└── utils/
+    └── helpers.py       ← 日志、CSV、JSON 工具</pre>
+</section>
+
+</div>
+
+<footer>
+  <p>BDSS · Company Contact Crawler · MIT License</p>
+  <p style="margin-top: 4px; font-size: .8rem;">Built with AtomCode</p>
+</footer>
+
+</body>
+</html>

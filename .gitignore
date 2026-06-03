@@ -9,6 +9,7 @@ __pycache__/
 *.json
 result.*
 .DS_Store
+.env
 env/
 venv/
 .venv/

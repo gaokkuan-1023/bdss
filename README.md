@@ -49,14 +49,57 @@ python main.py "腾讯" --delay 2000
 | sogou | SogouSearch | 中 | 否 | 搜狗搜索 |
 | baidumap | 函数调用 | 低 | 否 | 百度地图POI查询（API+页面双通道） |
 
+## HTTP API
+
+BDSS 提供了 RESTful API 服务，方便其他工具集成。
+
+```bash
+# 安装 Flask
+pip install flask
+
+# 启动 API 服务（默认 :5000）
+python api_server.py
+
+# 搜索公司电话
+curl -X POST http://localhost:5000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"company": "深圳腾讯", "engine": "all"}'
+
+# 批量搜索
+curl -X POST http://localhost:5000/api/search/batch \
+  -H "Content-Type: application/json" \
+  -d '{"companies": ["腾讯", "阿里", "字节"], "delay": 2000}'
+
+# 健康检查
+curl http://localhost:5000/api/health
+```
+
+## Docker 部署 API
+
+```bash
+docker build -t bdss-api .
+docker run -p 5000:5000 bdss-api python api_server.py --verbose
+```
+
+## 文档
+
+在线文档站：[GitHub Pages](https://gaokkuan-1023.github.io/bdss/)
+本地查看：打开 `docs/index.html`
+
 ## 项目结构
 
 ```
 bdss/
-├── main.py              # 入口
+├── main.py              # CLI 入口
+├── api_server.py        # HTTP API 服务 (Flask)
 ├── requirements.txt     # 依赖
 ├── Dockerfile           # Docker 容器化
 ├── LICENSE              # MIT 开源协议
+├── .env.example         # 环境变量模板
+├── docs/
+│   └── index.html       # GitHub Pages 文档站
+├── .github/workflows/
+│   └── ci.yml           # CI 流水线
 ├── skills/
 │   ├── base.py          # 搜索引擎基类 (Playwright)
 │   ├── baidu.py         # 百度
