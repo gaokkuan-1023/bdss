@@ -67,7 +67,15 @@ def query_baidu_map_poi(company: str) -> dict:
         logger.warning(f"    [!] 官方API请求失败: {e}")
 
     with sync_playwright() as p:
-        b = p.chromium.launch(headless=True)
+        b = None
+        try:
+            try:
+                b = p.chromium.launch(headless=True, channel='chrome')
+            except Exception:
+                b = p.chromium.launch(headless=True)
+        except Exception as e:
+            logger.warning(f"    [!] 百度地图浏览器启动失败，跳过: {e}")
+            return result
         ctx = b.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},

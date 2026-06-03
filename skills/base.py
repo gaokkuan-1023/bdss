@@ -51,7 +51,11 @@ class SearchSkill(ABC):
                 if self.proxy:
                     launch_kwargs["proxy"] = {"server": self.proxy}
                 try:
-                    self._browser = p.chromium.launch(**launch_kwargs)
+                    # 优先使用系统 Chrome（避免重新下载 Chromium）
+                    try:
+                        self._browser = p.chromium.launch(**launch_kwargs, channel='chrome')
+                    except Exception:
+                        self._browser = p.chromium.launch(**launch_kwargs)
                 except Exception as e:
                     err = str(e)
                     logger.error(f"Playwright 浏览器启动失败: {err}")

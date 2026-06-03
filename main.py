@@ -382,29 +382,11 @@ def search_all_engines(
                 verbose=verbose,
                 delay=delay,
                 cached=False,  # 子引擎不写缓存，由合并结果写
-                shared_browser=_shared_browser,
             )
             return result
         except Exception as e:
             logger.error(f"  [X] 引擎 {eng} 搜索失败: {e}")
             return None
-
-    # 创建共享浏览器（所有引擎共用一个 Playwright 实例）
-    _shared_browser = None
-    _shared_pw = None
-    try:
-        from playwright.sync_api import sync_playwright
-        pw = sync_playwright()
-        _shared_pw = pw
-        p = pw.start()
-        launch_kwargs = {"headless": headless}
-        if proxy:
-            launch_kwargs["proxy"] = {"server": proxy}
-        _shared_browser = p.chromium.launch(**launch_kwargs)
-    except Exception as e:
-        logger.warning(f"共享浏览器启动失败，各引擎将独立启动: {e}")
-        _shared_browser = None
-        _shared_pw = None
 
     logger.info(f"  并行启动 {len(MULTI_ENGINES)} 个引擎...")
     with ThreadPoolExecutor(max_workers=len(MULTI_ENGINES)) as executor:
@@ -422,18 +404,6 @@ def search_all_engines(
                 for src in result.get('sources', []):
                     if src['phone'] == phone:
                         all_phones[phone].append(src)
-
-    # 关闭共享浏览器
-    if _shared_browser:
-        try:
-            _shared_browser.close()
-        except Exception:
-            pass
-    if _shared_pw:
-        try:
-            _shared_pw.stop()
-        except Exception:
-            pass
 
     merged = {
         "company": company_name,
