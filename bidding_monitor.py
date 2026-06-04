@@ -459,6 +459,22 @@ def save_items(items: list[dict]) -> int:
                     phone = detail.get("phone", "")
                 if not buyer:
                     buyer = detail.get("buyer", "")
+            # 如果详情页没找到电话，从标题提取公司名查百度地图
+            if not phone and buyer:
+                from skills.lite_search import search_baidumap_poi
+                try:
+                    pois = search_baidumap_poi(buyer)
+                    map_phones = set()
+                    for p in pois:
+                        if p.get("phone"):
+                            for m in re.finditer(r"1[3-9]\d{9}", p["phone"]):
+                                map_phones.add(m.group())
+                            for m in re.finditer(r"0\d{2,3}[-]?\d{7,8}", p["phone"]):
+                                map_phones.add(m.group().replace("-", ""))
+                    if map_phones:
+                        phone = " | ".join(sorted(map_phones)[:3])
+                except Exception:
+                    pass
             conn.execute(
                 "INSERT INTO bidding_items (title, url, source, buyer, contact, phone, email, matched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (title[:200], item.get("url", ""), item.get("source", ""),
