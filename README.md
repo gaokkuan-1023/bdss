@@ -1,116 +1,129 @@
-# 公司联系电话爬虫 - Company Contact Crawler
+# BDSS — 公司联系电话爬虫 & 招标监控
 
 > ⚠️ **免责声明：** 本工具仅供合法的商业调研和企业信息收集使用。用户使用本工具获取信息时，应遵守《个人信息保护法》及相关法律法规。**禁止**用于非法获取个人信息、骚扰、诈骗或任何违法违规行为。使用者应自行承担全部法律责任。
 
-支持搜索引擎：百度、谷歌、必应、搜狗、百度地图
-基于 Playwright 浏览器引擎
+BDSS 是一套面向**工业品销售/B2B获客**场景的数据工具包，包含三个核心模块：
 
-## 安装
+| 模块 | 用途 | 数据源 |
+|------|------|--------|
+| **批量搜电话** | 已知公司名，查最新联系方式 | 百度地图 POI API（主）+ 顺企网（辅） |
+| **招标监控** | 按行业关键词，自动扫描招标线索 | 中国政府采购网 + 招标采购导航网 |
+| **Web 界面** | 上传 Excel 名单 → 自动搜 → 下载结果 | 集成以上两个模块 |
+
+---
+
+## 快速开始
+
+### 前置配置
 
 ```bash
+# 1. 安装依赖
 pip install -r requirements.txt
-python -m playwright install chromium
+
+# 2. 配置百度地图 API Key（必填，电话查询的核心数据源）
+#    申请地址：https://lbsyun.baidu.com/apiconsole/key
+#    创建 .env 文件：
+echo 'BAIDU_MAP_AK=你的百度地图AK' >> .env
 ```
 
-## 使用
+### 启动 Web 界面（推荐）
 
 ```bash
-# 使用默认搜索引擎（百度）搜索单个公司
-python main.py "深圳腾讯计算机系统有限公司"
-
-# 指定搜索引擎
-python main.py "阿里巴巴" --engine baidu
-python main.py "Alibaba" --engine google
-python main.py "华为" --engine bing
-
-# 指定输出文件
-python main.py "字节跳动" -o result.json
-
-# 从文件批量搜索（每行一个公司名）
-python main.py -f companies.txt
-
-# 显示所有找到的电话
-python main.py "小米科技" --verbose
-
-# 多引擎合并搜索（推荐，自动去重）
-python main.py "山东华派集团有限公司" --all --max 5 -v -o result.json
-
-# 设置请求间隔（毫秒），避免触发反爬
-python main.py "腾讯" --delay 2000
+cd bdss-app
+python app.py
+# 浏览器打开 http://localhost:5300
 ```
 
-## 支持的搜索引擎
+| 页面 | 功能 |
+|------|------|
+| `http://localhost:5300` | 上传公司 Excel → 自动搜电话 → 下载结果 |
+| `http://localhost:5300/monitor` | 招标监控面板 → 一键扫描 → 查看线索 |
 
-| 引擎 | 类名 | 反爬难度 | 需要代理 | 说明 |
-|------|------|---------|---------|------|
-| baidu | BaiduSearch | 中 | 否 | 主搜索引擎，含手机版补充 |
-| google | GoogleSearch | 高 | 是 | 境外搜索，需代理 |
-| bing | BingSearch | 低 | 否 | 微软必应中文版 |
-| sogou | SogouSearch | 中 | 否 | 搜狗搜索 |
-| baidumap | 函数调用 | 低 | 否 | 百度地图POI查询（API+页面双通道） |
-
-## HTTP API
-
-BDSS 提供了 RESTful API 服务，方便其他工具集成。
+### 命令行使用
 
 ```bash
-# 安装 Flask
-pip install flask
+# 单公司查电话（需百度地图 AK）
+python -c "
+from skills.lite_search import search_company_phones
+r = search_company_phones('华能国际电力股份有限公司德州电厂')
+print(r['phones'])
+"
 
-# 启动 API 服务（默认 :5000）
-python api_server.py
+# AI 引擎搜索（需配置 AI API Key）
+python main.py "深圳腾讯" --engine ai
 
-# 搜索公司电话
-curl -X POST http://localhost:5000/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"company": "深圳腾讯", "engine": "all"}'
-
-# 批量搜索
-curl -X POST http://localhost:5000/api/search/batch \
-  -H "Content-Type: application/json" \
-  -d '{"companies": ["腾讯", "阿里", "字节"], "delay": 2000}'
-
-# 健康检查
-curl http://localhost:5000/api/health
+# 多引擎（Playwright 可选）
+python main.py "山东华派" --all --delay 2000
 ```
 
-## Docker 部署 API
+---
+
+## 能力对比
+
+| 搜索方式 | 需要 | 速度 | 覆盖 | 适合场景 |
+|----------|------|------|------|---------|
+| **百度地图 POI** | `BAIDU_MAP_AK` | 2s/家 | ~60% 有电话 | 已知公司名查电话 |
+| **AI 引擎** | `BDSS_AI_API_KEY` | 3-5s | 直接回答 | 快速查询 + 验证 |
+| **Playwright 引擎** | Chromium 浏览器 | 8-15s | 视情况 | 深度爬取（可选） |
+
+---
+
+## 招标监控
+
+按行业关键词自动扫描招标网站，匹配新线索：
 
 ```bash
-docker build -t bdss-api .
-docker run -p 5000:5000 bdss-api python api_server.py --verbose
+# 一次性扫描
+python -c "from bidding_monitor import scan; r = scan(); print(r)"
+
+# 通过 Web 界面
+# http://localhost:5300/monitor → 点"立即扫描"
 ```
 
-## 文档
+**数据源：**
+- 中国政府采购网（ccgp.gov.cn）— POST 搜索
+- 招标采购导航网（okcis.cn）— HTML 解析
+- 可扩展：更多源在 `bidding_monitor.py` 的 `BIDDING_SOURCES` 配置
 
-在线文档站：[GitHub Pages](https://gaokkuan-1023.github.io/bdss/)
-本地查看：打开 `docs/index.html`
+---
 
 ## 项目结构
 
 ```
-bdss/
-├── main.py              # CLI 入口
-├── api_server.py        # HTTP API 服务 (Flask)
-├── requirements.txt     # 依赖
-├── Dockerfile           # Docker 容器化
-├── LICENSE              # MIT 开源协议
-├── .env.example         # 环境变量模板
-├── docs/
-│   └── index.html       # GitHub Pages 文档站
-├── .github/workflows/
-│   └── ci.yml           # CI 流水线
+bdss/                          # 核心代码
+├── main.py                    # CLI 入口（多引擎）
+├── bidding_monitor.py         # 招标监控引擎
+├── requirements.txt           # 运行时依赖
+├── requirements-dev.txt       # 开发依赖
+├── .env.example               # 环境变量模板
 ├── skills/
-│   ├── base.py          # 搜索引擎基类 (Playwright)
-│   ├── baidu.py         # 百度
-│   ├── baidumap.py      # 百度地图 POI
-│   ├── google.py        # 谷歌
-│   ├── bing.py          # 必应
-│   └── sogou.py         # 搜狗
+│   ├── ai.py                  # AI 引擎（LLM API）
+│   ├── lite_search.py         # 轻量引擎（HTTP，无需 Playwright）
+│   ├── base.py                # Playwright 基类
+│   ├── baidu.py / bing.py     # 搜索引擎（可选，需 Playwright）
+│   └── baidumap.py            # 百度地图 POI 查询
 ├── extractors/
-│   ├── __init__.py
-│   └── phone.py         # 电话号码提取器
+│   └── phone.py               # 电话提取器
 └── utils/
-    ├── __init__.py
-    └── helpers.py       # 辅助函数（日志、CSV导出等）
+    ├── helpers.py              # 日志/CSV/Excel 工具
+    ├── cache.py                # SQLite 结果缓存
+    └── env.py                  # .env 统一读取
+
+bdss-app/                      # Web 界面
+├── app.py                     # Flask 服务
+└── 水处理客户名单_山东.xlsx   # 示例名单
 ```
+
+---
+
+## 运行要求
+
+- Python 3.10+
+- 百度地图 API Key（免费申请，电话查询必需）
+- （可选）Playwright Chromium（仅 Playwright 引擎需要）
+
+---
+
+## 许可证
+
+MIT
