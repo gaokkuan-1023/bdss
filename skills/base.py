@@ -74,8 +74,8 @@ class SearchSkill(ABC):
             if HAS_STEALTH:
                 try:
                     _stealth.apply_stealth_sync(self._page)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug(f"stealth 注入失败: {_e}")
             self._page.set_default_timeout(self.timeout)
             self._started = True
 
@@ -104,8 +104,8 @@ class SearchSkill(ABC):
         except Exception:
             try:
                 search_page_text = self.page.content()
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
 
         if hasattr(self, '_search_page_html') and self._search_page_html:
             if not search_page_text:
@@ -133,24 +133,24 @@ class SearchSkill(ABC):
             try:
                 if self._context:
                     self._context.close()
-                if self._browser:
+                if self._browser and self._owns_browser:
                     self._browser.close()
                 if self._pw:
                     self._pw.stop()
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
         else:
             # 共享浏览器：只关闭 context+page，不关 browser
             try:
                 if self._context:
                     self._context.close()
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
             try:
                 if self._page:
                     self._page.close()
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
         self._context = None
         self._page = None
         # 不重置 _browser / _pw（共享实例不归我们管）

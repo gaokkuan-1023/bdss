@@ -39,8 +39,8 @@ def _get_config(key: str, default: str = "") -> str:
                     if line.startswith(f"{key}="):
                         val = line.split("=", 1)[1].strip().strip('"').strip("'")
                         break
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
     return val or default
 
 

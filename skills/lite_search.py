@@ -58,8 +58,8 @@ def search_baidu(query: str, max_results: int = 5) -> list[dict]:
                 if url_param:
                     try:
                         url = urllib.parse.unquote(url_param.group(1))
-                    except Exception:
-                        pass
+                    except Exception as _ex:
+                        logger.debug(f"忽略: {_ex}")
         if title and url and len(results) < max_results:
             results.append({"title": title, "url": url, "snippet": "", "index": len(results) + 1})
 
@@ -98,23 +98,15 @@ def search_and_open(query: str, engine: str = "baidu", max_results: int = 3) -> 
     return opened, search_text
 
 
+PHONE_EXTRACTOR = None
+
 def extract_phones_from_text(text: str) -> list[str]:
-    """从文本中提取中国电话号码"""
-    phones = set()
-
-    # 手机号
-    for m in re.finditer(r"(?<!\d)1[3-9]\d{9}(?!\d)", text):
-        phones.add(m.group())
-
-    # 固话
-    for m in re.finditer(r"(?<!\d)0\d{2,3}[- ]?\d{7,8}(?!\d)", text):
-        phones.add(m.group().replace("-", "").replace(" ", ""))
-
-    # 400/800
-    for m in re.finditer(r"(?<!\d)(?:400|800)[- ]?\d{3}[- ]?\d{4}(?!\d)", text):
-        phones.add(m.group().replace("-", "").replace(" ", ""))
-
-    return sorted(phones)
+    """从文本中提取中国电话号码（委托 PhoneExtractor）"""
+    global PHONE_EXTRACTOR
+    if PHONE_EXTRACTOR is None:
+        from extractors.phone import PhoneExtractor
+        PHONE_EXTRACTOR = PhoneExtractor(prefer_nearby=False)
+    return PHONE_EXTRACTOR.extract(text)
 
 
 SEARCH_HEADERS = {
@@ -138,12 +130,13 @@ def search_bidding(keyword: str, max_pages: int = 1) -> dict:
                 all_phones.add(m.group())
             for m in re.finditer(r'<div class="tit">\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
                 items.append({"title": m.group(2).strip(), "url": m.group(1)})
-        except Exception:
-            pass
+        except Exception as _ex:
+            logger.debug(f"忽略: {_ex}")
     return {"phones": sorted(all_phones), "phone_count": len(all_phones), "items": items[:10], "source": "招标采购导航网"}
 
 
 def search_baidumap_poi(company: str) -> list[dict]:
+    from utils.env import get_ak
     """通过百度地图 Place API 搜索公司 POI 及电话"""
     ak = os.environ.get("BAIDU_MAP_AK", "")
     if not ak:
@@ -219,8 +212,8 @@ def search_company_phones(company: str) -> dict:
                 if p not in all_phones:
                     all_phones.add(p)
                     sources.append({"phone": p, "source": "顺企网", "title": ""})
-        except Exception:
-            pass
+        except Exception as _ex:
+            logger.debug(f"忽略: {_ex}")
 
     return {
         "company": company,

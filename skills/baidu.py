@@ -113,8 +113,8 @@ class BaiduSearch(SearchSkill):
                 # 额外等待 AI 摘要/企业信息卡片加载（百度动态渲染）
                 try:
                     self.page.wait_for_timeout(5000)
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
             else:
                 # 模拟阅读
                 self._simulate_reading()
@@ -149,8 +149,8 @@ class BaiduSearch(SearchSkill):
                 try:
                     self._search_page_html = self.page.content()
                     self._search_page_url = self.page.url
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
 
             page_count = len(page_results)
             logger.info(f"  第{page_num+1}页: {page_count} 条 (累计 {len(all_results)}/{max_results})")
@@ -188,8 +188,8 @@ class BaiduSearch(SearchSkill):
             if HAS_STEALTH:
                 try:
                     _stealth.apply_stealth_sync(mobile_page)
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
             mobile_page.goto(f"https://m.baidu.com/s?word={quote(query)}")
             mobile_page.wait_for_timeout(5000)
 
@@ -241,8 +241,8 @@ class BaiduSearch(SearchSkill):
                 try:
                     self.page.reload()
                     self.page.wait_for_timeout(3000)
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
             elif attempt == 1:
                 pn = page_num * 10
                 url = self.search_url.format(query=quote(self._last_query), pn=pn)
@@ -250,16 +250,16 @@ class BaiduSearch(SearchSkill):
                 try:
                     self.page.evaluate(f"window.location.href='{url}'")
                     self.page.wait_for_timeout(5000)
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
             else:
                 logger.info(f"  [!] 等待10秒后最后尝试...")
                 time.sleep(10)
                 try:
                     self.page.reload()
                     self.page.wait_for_timeout(3000)
-                except Exception:
-                    pass
+                except Exception as _ex:
+                    logger.debug(f"忽略: {_ex}")
 
             if not self._check_captcha():
                 return True
@@ -312,8 +312,8 @@ class BaiduSearch(SearchSkill):
             for y in [300, 800, 1500, 500, 0]:
                 self.page.evaluate(f"window.scrollTo(0, {y})")
                 time.sleep(0.6)
-        except Exception:
-            pass
+        except Exception as _ex:
+            logger.debug(f"忽略: {_ex}")
         time.sleep(1.0)
 
     def _go_next_page(self) -> bool:
@@ -332,8 +332,8 @@ class BaiduSearch(SearchSkill):
                     btn.first.click()
                     self.page.wait_for_timeout(3000)
                     return True
-            except Exception:
-                pass
+            except Exception as _ex:
+                logger.debug(f"忽略: {_ex}")
 
             # 方法2: JS 导航
             self.page.evaluate(f"window.location.href='{next_url}'")

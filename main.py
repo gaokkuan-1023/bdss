@@ -10,7 +10,6 @@ import logging
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, List, Optional, TypedDict
 
@@ -207,8 +206,8 @@ def search_company(
                         })
                     if search_phones2 and verbose:
                         logger.info(f"\n  [搜索结果页-重试] 发现电话: {', '.join(search_phones2)}")
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug(f"忽略异常: {_e}")
 
         # 从每个打开页面提取电话
         for page_data in (opened_pages or []):
@@ -319,7 +318,7 @@ def search_company(
     result['sources'] = sources
 
     # ===== 百度地图 POI 补充查询 =====
-    if len(all_phones) < 3 or engine != 'google':
+    if len(all_phones) < 3 and engine != 'google':
         logger.info(f"  [百度地图] 补充查询POI数据...")
         map_r = query_map_poi(company_name)
         if map_r.get('all_phones'):
@@ -388,23 +387,19 @@ def search_all_engines(
             logger.error(f"  [X] 引擎 {eng} 搜索失败: {e}")
             return None
 
-    logger.info(f"  并行启动 {len(MULTI_ENGINES)} 个引擎...")
-    with ThreadPoolExecutor(max_workers=len(MULTI_ENGINES)) as executor:
-        future_map = {executor.submit(_run_engine, eng): eng for eng in MULTI_ENGINES}
-        for future in as_completed(future_map):
-            eng = future_map[future]
-            result = future.result()
-            if result is None:
-                continue
-            per_engine.append({eng: result})
-            engines_run.append(eng)
-            for phone in result.get('phones', []):
-                if phone not in all_phones:
-                    all_phones[phone] = []
-                for src in result.get('sources', []):
-                    if src['phone'] == phone:
-                        all_phones[phone].append(src)
-
+    logger.info(f"  串行执行 {len(MULTI_ENGINES)} 个引擎...")
+    for eng in MULTI_ENGINES:
+        result = _run_engine(eng)
+        if result is None:
+            continue
+        per_engine.append({eng: result})
+        engines_run.append(eng)
+        for phone in result.get('phones', []):
+            if phone not in all_phones:
+                all_phones[phone] = []
+            for src in result.get('sources', []):
+                if src['phone'] == phone:
+                    all_phones[phone].append(src)
     merged = {
         "company": company_name,
         "phones": sorted(all_phones.keys()),
