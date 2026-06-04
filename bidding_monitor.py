@@ -450,6 +450,7 @@ def get_db() -> sqlite3.Connection:
             status TEXT DEFAULT 'new',
             relevance INTEGER DEFAULT 0,
             notes TEXT DEFAULT ''
+        )
     """)
     # 数据库迁移：旧表缺少 relevance 列时补充
     try:
@@ -465,6 +466,9 @@ def get_db() -> sqlite3.Connection:
     """)
     _db_conn.commit()
     return _db_conn
+
+# 模块加载时初始化数据库表
+get_db()
 
 def save_items(items: list[dict]) -> int:
     """保存条目并抓取详情页电话，返回新增数"""

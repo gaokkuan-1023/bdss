@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """BDSS 批量获客系统 — 轻量版（无需 Playwright）"""
 import sys, os, json, time, threading, uuid, logging
-logger = logging.getLogger(__name__)
 from pathlib import Path
+# 加载 .env 文件
+_env_path = Path.home() / "bdss-op/.env"
+if _env_path.exists():
+    for _line in _env_path.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip("\"'"))
 
+logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.expanduser("~/bdss-op"))
 
 from flask import Flask, request, jsonify, render_template_string, send_file
@@ -25,14 +33,12 @@ def index():
 
 @app.route("/api/dashboard")
 def api_dashboard():
-    """仪表盘数据"""
-    from bidding_monitor import get_db, close_db
+    from bidding_monitor import get_db
     conn = get_db()
     total = conn.execute("SELECT COUNT(*) FROM bidding_items").fetchone()[0]
     new_today = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE matched_at > ?", (time.time() - 86400,)).fetchone()[0]
     with_phone = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE phone != ''").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
-    close_db()
     return jsonify({"total": total, "new_today": new_today, "with_phone": with_phone, "contacted": contacted})
 
 
