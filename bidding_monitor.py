@@ -425,6 +425,7 @@ def get_db() -> sqlite3.Connection:
             phone TEXT DEFAULT '',
             email TEXT DEFAULT '',
             matched_at REAL NOT NULL,
+            status TEXT DEFAULT 'new',
             notes TEXT DEFAULT ''
         )
     """)
@@ -499,16 +500,16 @@ def get_stats() -> dict:
     new_ = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
     recent = conn.execute(
-        "SELECT title, source, buyer, contact, phone, email, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
+        "SELECT id, title, source, buyer, contact, phone, email, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
     ).fetchall()
     logs = conn.execute(
         "SELECT scanned_at, total_found, sources FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
     ).fetchall()
     return {
         "total": total, "new": new_, "contacted": contacted,
-        "recent": [{"title": r[0], "source": r[1], "buyer": r[2],
-                     "contact": r[3], "phone": r[4], "email": r[5],
-                      "time": r[6], "status": r[7]} for r in recent],
+        "recent": [{"id": r[0], "title": r[1], "source": r[2], "buyer": r[3],
+                     "contact": r[4], "phone": r[5], "email": r[6],
+                     "time": r[7], "status": r[8]} for r in recent],
         "logs": [{"time": r[0], "found": r[1], "sources": json.loads(r[2])} for r in logs],
     }
 
