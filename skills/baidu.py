@@ -248,7 +248,7 @@ class BaiduSearch(SearchSkill):
                 url = self.search_url.format(query=quote(self._last_query), pn=pn)
                 logger.info(f"  [!] JS跳转重试...")
                 try:
-                    self.page.evaluate(f"window.location.href='{url}'")
+                    self.page.evaluate(f"window.location.href='{url.replace(chr(39), chr(37)+chr(50)+chr(55))}'")
                     self.page.wait_for_timeout(5000)
                 except Exception as _ex:
                     logger.debug(f"忽略: {_ex}")

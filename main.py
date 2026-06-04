@@ -11,7 +11,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -355,7 +355,7 @@ def search_all_engines(
     cached: bool = True,
 ) -> dict:
     """
-    多引擎并行搜索：共享一个浏览器实例加速启动。
+    多引擎串行搜索：依次用 baidu → bing → sogou 搜索，合并结果去重。
     缓存命中时跳过搜索直接返回。
     """
     # 缓存命中检查
@@ -369,7 +369,7 @@ def search_all_engines(
     per_engine = []
     engines_run = []
 
-    def _run_engine(eng: str) -> dict | None:
+    def _run_engine(eng: str) -> Optional[dict]:
         """执行单个引擎搜索，异常时返回 None 不中断整体"""
         try:
             result = search_company(
@@ -535,7 +535,7 @@ def main():
         summary = {
             "total": len(companies),
             "mode": "all" if args.all else args.engine,
-            "results": [],
+            "results": results if has_results else [],
         }
         path = save_result("all_companies", summary, args.output or ".")
         logger.info(f"\n[结果] 全部结果已保存: {path}")

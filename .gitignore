@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.log
-# *.txt
+# # *.txt
 !requirements.txt
 *.json
 result.*
@@ -16,3 +16,6 @@ venv/
 .venv/
 dist/
 *.egg-info/
+
+# Database files
+*.db

@@ -1,4 +1,6 @@
-"""BDSS 招标监控引擎 v2 — 4 种采集策略覆盖多源招标网站"""
+"""BDSS 招标监控引擎 v2 — 4 种采集策略覆盖多源招标网站"""BDSS 招标监控引擎"""
+from typing import Optional, List
+"""
 import json
 import logging
 import re
@@ -32,7 +34,7 @@ def _decode(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _get(url: str, timeout: int = 8, headers: dict | None = None) -> str | None:
+def _get(url: str, timeout: int = 8, headers: Optional[dict] = None) -> str | None:
     h = {**HEADERS, **(headers or {})}
     try:
         req = urllib.request.Request(url, headers=h)
@@ -43,7 +45,7 @@ def _get(url: str, timeout: int = 8, headers: dict | None = None) -> str | None:
         return None
 
 
-def _post(url: str, data: dict, timeout: int = 10, headers: dict | None = None) -> str | None:
+def _post(url: str, data: dict, timeout: int = 10, headers: Optional[dict] = None) -> str | None:
     h = {**HEADERS, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", **(headers or {})}
     try:
         body = urllib.parse.urlencode(data).encode("utf-8")
@@ -191,7 +193,7 @@ def collect_ggzy(keyword: str, max_pages: int = 2) -> list[dict]:
 
 # ============ 采集器 3: rss_search (Bing RSS 搜索) ============
 
-def collect_rss(keyword: str, allowed_domains: list[str] | None = None) -> list[dict]:
+def collect_rss(keyword: str, allowed_domains: Optional[list[str]] = None) -> list[dict]:
     """通过 Bing RSS 搜索招标信息"""
     results = []
     query_templates = [

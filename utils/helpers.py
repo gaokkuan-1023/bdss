@@ -1,3 +1,4 @@
+from typing import Optional, List
 # utils/helpers.py
 import re
 import json
@@ -44,12 +45,12 @@ def extract_phone_numbers(text: str) -> list[dict]:
     return _phone_extractor.extract_all(text)
 
 
-def extract_nearby_phone(text: str, keywords: list[str] = None) -> list[str]:
+def extract_nearby_phone(text: str, keywords: Optional[list[str]] = None) -> list[str]:
     """已废弃，请使用 PhoneExtractor.extract()"""
     return _phone_extractor.extract(text)
 
 
-def save_result(company: str, results: list[dict], output_path: str | None = None):
+def save_result(company: str, results: list[dict], output_path: Optional[str] = None):
     """保存结果到 JSON 文件"""
     data = {
         "company": company,
