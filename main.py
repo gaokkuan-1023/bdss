@@ -535,7 +535,7 @@ def main():
         summary = {
             "total": len(companies),
             "mode": "all" if args.all else args.engine,
-            "results": results if has_results else [],
+            "results": [],
         }
         path = save_result("all_companies", summary, args.output or ".")
         logger.info(f"\n[结果] 全部结果已保存: {path}")
