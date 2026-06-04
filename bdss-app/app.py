@@ -160,20 +160,14 @@ def api_outcall_push_bidding():
                 except:
                     pass
     return jsonify(success=True, companies=pois[:30], keyword=keyword, region=region)
-    tmpl = (Path(__file__).parent / "templates/index.html").read_text(encoding="utf-8")
-    return render_template_string(tmpl)
-
 
 @app.route("/monitor")
 def monitor_page():
     tmpl = (Path(__file__).parent / "templates/monitor.html").read_text(encoding="utf-8")
     return render_template_string(tmpl)
-
-
 @app.route("/api/monitor/stats")
 def monitor_stats():
     return jsonify(get_stats())
-
 @app.route("/api/monitor/scan", methods=["POST"])
 def monitor_scan():
     result = scan_with_notify()
