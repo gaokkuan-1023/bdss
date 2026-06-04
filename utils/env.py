@@ -22,8 +22,8 @@ def get_env(key: str, default: str = "") -> str:
                 k, v = k.strip(), v.strip().strip("\"'")
                 if k == key:
                     return v
-        except Exception:
-            pass
+        except Exception as _ex:
+            pass  # logger.debug(f"忽略: {_ex}")
     return default
 
 

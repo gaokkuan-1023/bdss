@@ -26,8 +26,8 @@ if not _AK:
                 if _line.startswith("BAIDU_MAP_AK="):
                     _AK = _line.split("=", 1)[1].strip().strip('"').strip("'")
                     break
-        except Exception:
-            pass
+        except Exception as _ex:
+            pass  # logger.debug(f"忽略: {_ex}")
 
 
 def query_baidu_map_poi(company: str) -> dict:
@@ -136,8 +136,8 @@ def query_baidu_map_poi(company: str) -> dict:
                     if result["all_phones"]:
                         result["source"] = "百度地图建议"
                         logger.info(f"    [OK] 百度地图建议: {', '.join(result['all_phones'])}")
-            except Exception:
-                pass
+            except Exception as _ex:
+                pass  # logger.debug(f"忽略: {_ex}")
 
         b.close()
 
