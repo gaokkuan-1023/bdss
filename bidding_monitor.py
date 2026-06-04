@@ -89,12 +89,16 @@ def collect_ccgp(keyword: str, max_pages: int = 2) -> list[dict]:
             "agentName": "",
         }
         url = "http://search.ccgp.gov.cn/bxsearch?" + urllib.parse.urlencode(params)
-        html = _get(url, timeout=10)
+        time.sleep(3)  # 反爬
+        html = _get(url, timeout=10, headers={"Cookie": "test=1", "Referer": "http://search.ccgp.gov.cn/"})
         if not html:
             break
-        if "访问过于频繁" in html:
-            logger.warning("CCGP rate limit")
-            break
+        if "频繁访问" in html or "访问过于频繁" in html:
+            logger.warning("CCGP 限流，等待 10 秒...")
+            time.sleep(10)
+            html = _get(url, timeout=10)
+            if not html or "频繁访问" in html:
+                break
         # 解析结果
         blocks = re.findall(r"<li[^>]*>.*?</li>", html, re.DOTALL)
         for block in blocks:
@@ -276,16 +280,10 @@ WATER_CHEM_KEYWORDS = [
 BIDDING_SOURCES = [
     # --- 核心政府采购 ---
     {"name": "中国政府采购网", "type": "ccgp", "keywords": WATER_CHEM_KEYWORDS, "max_pages": 2},
-    # --- 全国公共资源交易 ---
-    {"name": "全国公共资源交易平台", "type": "ggzy", "keywords": WATER_CHEM_KEYWORDS[:5], "max_pages": 1},
-    # --- Bing RSS 搜索（覆盖全网招标站点） ---
-    {"name": "Bing搜索(招标)", "type": "rss", "keywords": WATER_CHEM_KEYWORDS[:5],
-     "allowed_domains": [
-         "ccgp.gov.cn", "cebpubservice.com", "chinabidding.com.cn",
-         "bidcenter.com.cn", "okcis.cn", "qianlima.com",
-         "ggzy.gov.cn", "gp.gov.cn", "zfcg.com",
-         "xxx.gov.cn", "xxx.cn",
-     ]},
+    # --- Bibi招标网 ---
+    {"name": "比比招标网", "type": "rss",
+     "keywords": WATER_CHEM_KEYWORDS[:3],
+     "allowed_domains": ["bibenet.com", "qianlima.com"]},
     # --- 招标采购导航网 ---
     {"name": "招标采购导航网", "type": "html",
      "url": "http://www.okcis.cn/search/?q={keyword}&page=1",
