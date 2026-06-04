@@ -350,8 +350,13 @@ def scan_all_sources() -> dict:
     return {"items": all_items, "per_source": per_source, "total": len(all_items)}
 
 
+_db_conn = None
+
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    global _db_conn
+    if _db_conn is not None:
+        return _db_conn
+    _db_conn = sqlite3.connect(str(DB_PATH))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS bidding_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,6 +436,13 @@ def update_status(item_id: int, status: str, notes: str = ""):
 
 
 # ============ 主入口 ============
+
+def close_db():
+    global _db_conn
+    if _db_conn:
+        _db_conn.close()
+        _db_conn = None
+
 
 def scan() -> dict:
     """执行一次完整扫描"""

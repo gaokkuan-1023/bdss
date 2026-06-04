@@ -15,6 +15,8 @@ from extractors.phone import PhoneExtractor
 logger = logging.getLogger(__name__)
 
 _BASE = "https://map.baidu.com"
+from utils.env import get_ak
+_AK = get_ak()
 # 优先从环境变量读取，其次 .env 文件；无配置时 API 通道降级到页面抓取
 _AK = os.environ.get("BAIDU_MAP_AK", "")
 if not _AK:

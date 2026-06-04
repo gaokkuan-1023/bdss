@@ -202,6 +202,9 @@ class BaiduSearch(SearchSkill):
         except Exception:
             return []
         finally:
+            if mobile_ctx:
+                try: mobile_ctx.close()
+                except: pass
             # 确保恢复原页面上下文
             self._context = old_ctx
             self._page = old_page
