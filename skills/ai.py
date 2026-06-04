@@ -70,7 +70,7 @@ class AISearch:
             logger.error("未配置 AI API Key，请设置 BDSS_AI_API_KEY 环境变量或在 .env 中填写")
             return ""
 
-        import urllib.request
+        import urllib.request, urllib.error
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         body = json.dumps({
@@ -89,7 +89,7 @@ class AISearch:
             method="POST",
         )
         try:
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=30)  # 30s timeout
             data = json.loads(resp.read().decode("utf-8"))
             content = data["choices"][0]["message"]["content"]
             return content.strip()
