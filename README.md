@@ -90,37 +90,38 @@ python -c "from bidding_monitor import scan; r = scan(); print(r)"
 ## 项目结构
 
 ```
-bdss/                          # 核心代码
-├── main.py                    # CLI 入口（多引擎）
-├── bidding_monitor.py         # 招标监控引擎
-├── requirements.txt           # 运行时依赖
-├── requirements-dev.txt       # 开发依赖
-├── .env.example               # 环境变量模板
+bdss/
+├── main.py              # CLI 入口
+├── bidding_monitor.py   # 招标监控引擎 + AI 分析
+├── requirements.txt     # 依赖
+├── .env.example         # 环境变量模板
 ├── skills/
-│   ├── ai.py                  # AI 引擎（LLM API）
-│   ├── lite_search.py         # 轻量引擎（HTTP，无需 Playwright）
-│   ├── base.py                # Playwright 基类
-│   ├── baidu.py / bing.py     # 搜索引擎（可选，需 Playwright）
-│   └── baidumap.py            # 百度地图 POI 查询
+│   ├── engines.py       # HTTP 搜索 (Bing/Baidu)
+│   ├── lite_search.py   # 全网搜电话
+│   ├── ai.py            # AI 引擎 (LLM API)
+│   └── baidumap.py      # 百度地图 POI
 ├── extractors/
-│   └── phone.py               # 电话提取器
-└── utils/
-    ├── helpers.py              # 日志/CSV/Excel 工具
-    ├── cache.py                # SQLite 结果缓存
-    └── env.py                  # .env 统一读取
-
-bdss-app/                      # Web 界面
-├── app.py                     # Flask 服务
-└── 水处理客户名单_山东.xlsx   # 示例名单
+│   └── phone.py         # 电话提取器
+├── utils/
+│   ├── helpers.py       # 工具函数
+│   ├── cache.py         # SQLite 缓存
+│   └── env.py           # .env 读取
+├── tests/
+│   └── test_phone_extractor.py
+└── bdss-app/            # Web 界面
+    ├── app.py           # Flask 服务
+    ├── industry_api.py  # 行业拓客 API
+    └── templates/
+        ├── index.html   # 搜电话页
+        ├── monitor.html # 招标监控页
+        └── industry.html# 行业拓客页
 ```
-
----
 
 ## 运行要求
 
 - Python 3.10+
 - 百度地图 API Key（免费申请，电话查询必需）
-- （可选）Playwright Chromium（仅 Playwright 引擎需要）
+- (可选) AI API Key（AI 搜索和分析需要）
 
 ---
 
