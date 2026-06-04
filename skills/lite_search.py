@@ -12,6 +12,8 @@ from skills.engines import search_bing, search_baidu, fetch_page_text
 
 logger = logging.getLogger(__name__)
 
+PHONE_EXTRACTOR = None
+
 def extract_phones_from_text(text: str) -> list[str]:
     """从文本中提取中国电话号码（委托 PhoneExtractor）"""
     global PHONE_EXTRACTOR
