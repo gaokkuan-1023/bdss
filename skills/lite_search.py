@@ -174,12 +174,18 @@ def search_baidumap_poi(company: str) -> list[dict]:
         return []
 
 
-def search_company_phones(company: str) -> dict:
-    """一站式搜索公司电话：百度地图 POI + 顺企网"""
+def search_company_phones(company: str, log_detail: bool = False) -> dict:
+    """一站式搜索公司电话：百度地图 POI + 顺企网，返回电话和步骤日志"""
     all_phones = set()
     sources = []
+    steps = [] if log_detail else None
+
+    def _log(msg):
+        if steps is not None:
+            steps.append(msg)
 
     # 1. 百度地图 POI（最准）
+    _log(f"1/3 百度地图POI查询: {company}")
     pois = search_baidumap_poi(company)
     for poi in pois:
         if poi["phone"]:
@@ -187,11 +193,16 @@ def search_company_phones(company: str) -> dict:
                 if p not in all_phones:
                     all_phones.add(p)
                     sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
+    if all_phones:
+        _log(f"  ✓ 百度地图POI找到电话: {' | '.join(all_phones)}")
+    else:
+        _log(f"  ✗ 百度地图POI未找到电话")
 
-    # 2. 如果百度地图没找到，试试缩短公司名再搜
+    # 2. 缩短公司名再搜
     if not all_phones:
         short_name = company.replace("有限公司", "").replace("股份有限公司", "").replace("集团", "").replace("(", "").replace(")", "").replace("（", "").replace("）", "")
         if short_name != company:
+            _log(f"2/3 缩短名称查询: {short_name}")
             pois = search_baidumap_poi(short_name)
             for poi in pois:
                 if poi["phone"]:
@@ -199,9 +210,16 @@ def search_company_phones(company: str) -> dict:
                         if p not in all_phones:
                             all_phones.add(p)
                             sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
+            if all_phones:
+                _log(f"  ✓ 缩短名称找到电话: {' | '.join(all_phones)}")
+            else:
+                _log(f"  ✗ 缩短名称也未找到电话")
+        else:
+            _log(f"2/3 公司名无需缩短，跳过")
 
     # 3. 顺企网补充
     if not all_phones:
+        _log("3/3 顺企网查询中...")
         try:
             key = urllib.parse.quote(company[:6])
             url = f"https://www.11467.com/company/search.php?key={key}"
@@ -212,12 +230,18 @@ def search_company_phones(company: str) -> dict:
                 if p not in all_phones:
                     all_phones.add(p)
                     sources.append({"phone": p, "source": "顺企网", "title": ""})
+            if all_phones:
+                _log(f"  ✓ 顺企网找到电话: {' | '.join(all_phones)}")
+            else:
+                _log(f"  ✗ 顺企网未找到电话")
         except Exception as _ex:
-            logger.debug(f"忽略: {_ex}")
+            _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
+            logger.debug(f"顺企网查询失败: {_ex}")
 
     return {
         "company": company,
         "phones": sorted(all_phones),
         "phone_count": len(all_phones),
         "sources": sources,
+        "steps": steps if steps else [],
     }
