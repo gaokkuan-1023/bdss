@@ -435,7 +435,7 @@ def get_db() -> sqlite3.Connection:
     global _db_conn
     if _db_conn is not None:
         return _db_conn
-    _db_conn = sqlite3.connect(str(DB_PATH))
+    _db_conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     _db_conn.execute("""
         CREATE TABLE IF NOT EXISTS bidding_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
