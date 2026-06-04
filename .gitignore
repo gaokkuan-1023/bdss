@@ -19,3 +19,4 @@ dist/
 
 # Database files
 *.db
+*.db-journal
