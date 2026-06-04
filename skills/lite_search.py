@@ -134,7 +134,8 @@ def search_baidumap_poi(company: str) -> list[dict]:
         return []
 
     query = urllib.parse.quote(company)
-    url = f"https://api.map.baidu.com/place/v2/search?query={query}&region=%E5%85%A8%E5%9B%BD&output=json&ak={ak}"
+    region = urllib.parse.quote("全国")
+    url = f"https://api.map.baidu.com/place/v2/search?query={query}&region={region}&output=json&ak={ak}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urllib.request.urlopen(req, timeout=10)
@@ -155,7 +156,7 @@ def search_baidumap_poi(company: str) -> list[dict]:
 
 
 def search_company_phones(company: str) -> dict:
-    """一站式搜索公司电话：百度 + 必应 + 百度地图"""
+    """一站式搜索公司电话：百度地图 POI + 顺企网"""
     all_phones = set()
     sources = []
 
@@ -166,16 +167,34 @@ def search_company_phones(company: str) -> dict:
             for p in extract_phones_from_text(poi["phone"]):
                 if p not in all_phones:
                     all_phones.add(p)
-                    sources.append({"phone": p, "source": "百度地图POI", "title": poi["name"]})
+                    sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
 
-    # 2. 必应搜索 "公司名 联系电话"
-    results = search_bing(f"{company} 联系电话", max_results=5)
-    for r in results:
-        text = fetch_page_text(r["url"])
-        for p in extract_phones_from_text(text):
-            if p not in all_phones:
-                all_phones.add(p)
-                sources.append({"phone": p, "source": r["url"][:50], "title": r["title"][:40]})
+    # 2. 如果百度地图没找到，试试缩短公司名再搜
+    if not all_phones:
+        short_name = company.replace("有限公司", "").replace("股份有限公司", "").replace("集团", "").replace("(", "").replace(")", "").replace("（", "").replace("）", "")
+        if short_name != company:
+            pois = search_baidumap_poi(short_name)
+            for poi in pois:
+                if poi["phone"]:
+                    for p in extract_phones_from_text(poi["phone"]):
+                        if p not in all_phones:
+                            all_phones.add(p)
+                            sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
+
+    # 3. 顺企网补充
+    if not all_phones:
+        try:
+            key = urllib.parse.quote(company[:6])
+            url = f"https://www.11467.com/company/search.php?key={key}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp = urllib.request.urlopen(req, timeout=8)
+            html = resp.read().decode("utf-8", errors="replace")
+            for p in extract_phones_from_text(html):
+                if p not in all_phones:
+                    all_phones.add(p)
+                    sources.append({"phone": p, "source": "顺企网", "title": ""})
+        except Exception:
+            pass
 
     return {
         "company": company,
