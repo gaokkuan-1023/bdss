@@ -109,8 +109,53 @@ def api_ai_config():
         with open(config_path) as f:
             return jsonify(json.load(f))
     return jsonify(**_ai_config)
-_step2_jobs: dict[str, dict] = {}
 
+_step2_jobs: dict[str, dict] = {}
+def _save_job_to_db(job_id: str, job: dict):
+    """持久化 job 状态到 SQLite"""
+    try:
+        from bidding_monitor import get_db, close_db
+        conn = get_db()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS step2_jobs (
+                job_id TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+        conn.execute(
+            "INSERT OR REPLACE INTO step2_jobs (job_id, data, created_at) VALUES (?, ?, ?)",
+            (job_id, json.dumps({k: v for k, v in job.items() if k != 'results'}, ensure_ascii=False), time.time()),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+def _load_jobs_from_db():
+    """从 SQLite 恢复未完成的 job"""
+    try:
+        from bidding_monitor import get_db, close_db
+        conn = get_db()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS step2_jobs (
+                job_id TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+        rows = conn.execute("SELECT job_id, data FROM step2_jobs ORDER BY created_at DESC LIMIT 10").fetchall()
+        for job_id, data_json in rows:
+            try:
+                job = json.loads(data_json)
+                if job.get("status") == "running":
+                    job["status"] = "lost"  # 服务器重启后标记为丢失
+                _step2_jobs[job_id] = job
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+_load_jobs_from_db()
 @bp.route("/api/step2_start", methods=["POST"])
 def api_step2_start():
     """启动查电话任务，返回 job_id"""
@@ -123,6 +168,7 @@ def api_step2_start():
         "log": [], "results": [], "excel_url": "", "contacts": [],
     }
     _step2_jobs[job_id] = job
+    _save_job_to_db(job_id, job)
 
     from skills.lite_search import search_company_phones
     from concurrent.futures import ThreadPoolExecutor, as_completed
