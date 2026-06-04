@@ -465,6 +465,11 @@ def get_db() -> sqlite3.Connection:
         )
     """)
     _db_conn.commit()
+    # 数据库迁移：旧表缺少 scanned_at 列时补充
+    try:
+        _db_conn.execute("SELECT scanned_at FROM monitor_log LIMIT 1")
+    except Exception:
+        _db_conn.execute("ALTER TABLE monitor_log ADD COLUMN scanned_at REAL NOT NULL DEFAULT 0")
     return _db_conn
 
 # 模块加载时初始化数据库表
