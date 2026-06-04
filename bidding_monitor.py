@@ -27,7 +27,7 @@ SOURCES = [
         "id": "okcis",
         "name": "招标采购导航网",
         "type": "search",
-        "url_template": "https://www.okcis.cn/search?q={keyword}&page={page}",
+        "url_template": "http://www.okcis.cn/search/?q={keyword}&page={page}",
         "parser": "okcis",
         "priority": 1,
     },
@@ -35,29 +35,36 @@ SOURCES = [
         "id": "baidumap",
         "name": "百度地图 POI",
         "type": "api",
-        "url_template": "https://api.map.baidu.com/place/v2/search?query={keyword}&region=全国&output=json&ak={ak}",
+        "url_template": "https://api.map.baidu.com/place/v2/search?query={keyword}&region={region}&output=json&ak={ak}",
         "parser": "baidumap",
         "priority": 2,
     },
 ]
 
-
 # ============ 解析器 ============
+
+def _decode_page(raw: bytes) -> str:
+    """自动检测编码"""
+    for enc in ["utf-8", "gbk", "gb2312", "gb18030"]:
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
 
 def parse_okcis(html: str) -> list[dict]:
     """解析招标采购导航网"""
     items = []
-    # 提取招标条目标题+链接
-    for m in re.finditer(r'<div class="tit">\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
+    for m in re.finditer(r'<a[^>]*href="([^"]+)"[^>]*target="_blank"[^>]*>(.*?)</a>', html, re.DOTALL):
         title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
         url = m.group(1)
-        if not url.startswith("http"):
-            url = "https://www.okcis.cn" + url
-        items.append({"title": title, "url": url, "source": "招标采购导航网"})
-    # 提取结果列表中的联系人
-    for m in re.finditer(r"联系人[：:]\s*([^<\n,，]{2,10})", html):
-        items.append({"title": f"联系人: {m.group(1).strip()}", "url": "", "source": "招标采购导航网"})
-    return items
+        if len(title) > 10 and not title.startswith(("上一页", "下一页", "GO")):
+            if not url.startswith("http"):
+                url = "http://www.okcis.cn" + url
+            items.append({"title": title, "url": url, "source": "招标采购导航网"})
+    # 限前50条
+    return items[:50]
 
 
 def parse_baidumap(html: str) -> list[dict]:
@@ -67,37 +74,24 @@ def parse_baidumap(html: str) -> list[dict]:
         data = json.loads(html)
         for poi in data.get("results", []):
             name = poi.get("name", "")
-            address = poi.get("address", "")
             phone = poi.get("telephone", "") or poi.get("phone", "")
+            address = poi.get("address", "")
             if name:
                 items.append({
                     "title": f"{name} {'- ' + phone if phone else ''}",
                     "url": "",
                     "source": "百度地图POI",
                     "address": address,
-                    "phone": phone,
+                    "phone": phone or "",
                 })
     except Exception:
         pass
-    return items
-
-
-def parse_generic(html: str) -> list[dict]:
-    """通用解析器 — 提取所有链接和电话"""
-    items = []
-    # 提取含关键词的链接
-    for m in re.finditer(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
-        title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
-        url = m.group(1)
-        if len(title) > 5 and not url.startswith("javascript"):
-            items.append({"title": title, "url": url, "source": "通用"})
-    return items
+    return items[:20]
 
 
 PARSERS = {
     "okcis": parse_okcis,
     "baidumap": parse_baidumap,
-    "generic": parse_generic,
 }
 
 
@@ -139,7 +133,6 @@ def save_items(items: list[dict], keywords: str, source_id: str) -> int:
     for item in items:
         title = item.get("title", "")
         phone = item.get("phone", "")
-        # 去重
         exists = conn.execute(
             "SELECT id FROM bidding_items WHERE title=? AND source=?",
             (title[:80], item.get("source", "")),
@@ -169,8 +162,12 @@ def get_stats() -> dict:
     total = conn.execute("SELECT COUNT(*) FROM bidding_items").fetchone()[0]
     new = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
-    recent = conn.execute("SELECT title, source, matched_at, status, phone FROM bidding_items ORDER BY matched_at DESC LIMIT 20").fetchall()
-    logs = conn.execute("SELECT source_id, scanned_at, items_found, new_items FROM monitor_log ORDER BY scanned_at DESC LIMIT 10").fetchall()
+    recent = conn.execute(
+        "SELECT title, source, matched_at, status, phone FROM bidding_items ORDER BY matched_at DESC LIMIT 20"
+    ).fetchall()
+    logs = conn.execute(
+        "SELECT source_id, scanned_at, items_found, new_items FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
+    ).fetchall()
     return {
         "total": total,
         "new": new,
@@ -200,17 +197,21 @@ def scan_keyword(keyword: str, ak: str = "") -> dict:
             continue
 
         try:
-            # 构建 URL
-            url = src["url_template"].format(keyword=urllib.parse.quote(keyword), ak=ak, page=1)
+            region = urllib.parse.quote("全国")
+            url = src["url_template"].format(
+                keyword=urllib.parse.quote(keyword),
+                ak=ak,
+                region=region,
+                page=1,
+            )
             req = urllib.request.Request(url, headers=HEADERS)
-            resp = urllib.request.urlopen(req, timeout=5)
-            html = resp.read().decode("utf-8", errors="replace")
+            resp = urllib.request.urlopen(req, timeout=6)
+            raw = resp.read()
+            html = _decode_page(raw)
 
-            # 解析结果
             items = parser(html)
             items_found = len(items)
             new_items = save_items(items, keyword, source_id)
-
             log_scan(source_id, items_found, new_items)
             total_new += new_items
             results.append({"source": src["name"], "found": items_found, "new": new_items})
@@ -219,7 +220,7 @@ def scan_keyword(keyword: str, ak: str = "") -> dict:
             log_scan(source_id, 0, 0, str(e)[:100])
             results.append({"source": src["name"], "found": 0, "new": 0, "error": str(e)[:50]})
 
-        time.sleep(1)  # 礼貌延迟
+        time.sleep(1)
 
     return {"total_new": total_new, "results": results}
 
