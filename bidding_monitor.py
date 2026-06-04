@@ -329,10 +329,32 @@ WATER_CHEM_KEYWORDS = [
     # 采购方式词
     "水处理剂 采购", "水处理 招标",
 ]
+def ai_analyze_bidding(title: str, buyer: str = "") -> dict:
+    """用 AI 分析招标线索的相关性"""
+    from utils.env import get_ai_api_key, get_ai_model
+    api_key = get_ai_api_key()
+    if not api_key:
+        return {"relevance": 0, "reason": "", "products": []}
+    from skills.ai import AISearch
+    ai = AISearch(api_key=api_key, model=get_ai_model())
+    prompt = ('分析是否与水处理药剂行业相关\n标题: ' + title + '\n采购方: ' + buyer +
+              '\nJSON: {"relevance":0-10,"reason":"理由","products":["产品"]}\n只返回JSON')
+    content = ai._call_llm([{"role": "system", "content": "水处理行业顾问，返回严格JSON"},
+                           {"role": "user", "content": prompt}])
+    if content:
+        import re as _re
+        m = _re.search(r'\{.*\}', content, _re.DOTALL)
+        if m:
+            try:
+                return __import__('json').loads(m.group(0))
+            except Exception:
+                pass
+    return {"relevance": 0, "reason": "", "products": []}
 
-# CCGP 扫描使用的子集（太多关键词会让扫描过慢）
 CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
-OKCIS_KEYWORDS = ["水处理药剂", "阻垢剂"]
+
+
+CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
 
 # 招标网站配置
 BIDDING_SOURCES = [
