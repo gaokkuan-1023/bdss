@@ -147,7 +147,7 @@ def api_outcall_push_bidding():
             try:
                 from utils.env import get_ak as _get_ak
                 ak = _get_ak()
-            except:
+            except Exception:
                 pass
         if ak:
             import urllib.request, json as _json, urllib.parse
@@ -163,7 +163,7 @@ def api_outcall_push_bidding():
                             continue
                         if not any(p["name"] == name for p in pois):
                             pois.append({"name": name, "address": poi.get("address",""), "phone": poi.get("telephone","") or poi.get("phone",""), "uid": poi.get("uid","")})
-                except:
+                except Exception:
                     pass
     return jsonify(success=True, companies=pois[:30], keyword=keyword, region=region)
 

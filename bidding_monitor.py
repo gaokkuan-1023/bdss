@@ -347,8 +347,8 @@ def ai_analyze_bidding(title: str, buyer: str = "") -> dict:
         if m:
             try:
                 return __import__('json').loads(m.group(0))
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug(f"忽略: {_e}")
     return {"relevance": 0, "reason": "", "products": []}
 
 CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
@@ -515,8 +515,8 @@ def save_items(items: list[dict]) -> int:
                                 map_phones.add(m.group().replace("-", ""))
                     if map_phones:
                         phone = " | ".join(sorted(map_phones)[:3])
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug(f"忽略: {_e}")
             conn.execute(
                 "INSERT INTO bidding_items (title, url, source, buyer, contact, phone, email, matched_at, status, relevance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)",
                 (title[:200], item.get("url", ""), item.get("source", ""),

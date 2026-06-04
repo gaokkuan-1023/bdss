@@ -68,8 +68,8 @@ def api_industry_search():
                 if p.get("phone"):
                     c["phone"] = p["phone"]
                     break
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug(f"忽略: {_e}")
 
     # 生成搜索结果 Excel 下载链接
     out_dir = Path("/tmp/bdss_uploads")
@@ -128,8 +128,8 @@ def _save_job_to_db(job_id: str, job: dict):
             (job_id, json.dumps({k: v for k, v in job.items() if k != 'results'}, ensure_ascii=False), time.time()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug(f"忽略: {_e}")
 
 def _load_jobs_from_db():
     """从 SQLite 恢复未完成的 job"""
@@ -150,10 +150,10 @@ def _load_jobs_from_db():
                 if job.get("status") == "running":
                     job["status"] = "lost"  # 服务器重启后标记为丢失
                 _step2_jobs[job_id] = job
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as _e:
+                logger.debug(f"忽略: {_e}")
+    except Exception as _e:
+        logger.debug(f"忽略: {_e}")
 
 _load_jobs_from_db()
 @bp.route("/api/step2_start", methods=["POST"])

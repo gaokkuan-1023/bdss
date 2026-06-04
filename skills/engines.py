@@ -51,8 +51,8 @@ def search_baidu(query: str, max_results: int = 5) -> list[dict]:
             if url_match:
                 try:
                     url_val = urllib.parse.unquote(url_match.group(1))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug(f"忽略: {_e}")
         if title and len(results) < max_results:
             results.append({"title": title, "url": url_val, "snippet": "", "index": len(results) + 1})
     return results

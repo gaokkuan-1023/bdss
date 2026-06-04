@@ -108,7 +108,7 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             _log(f"  ✓ 招标数据库找到电话: {' | '.join(all_phones)}")
         else:
             _log(f"  - 招标数据库未找到")
-    except:
+    except Exception:
         _log(f"  - 招标数据库查询跳过")
 
     # 1. 百度地图 POI（最准）
@@ -208,14 +208,13 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             if snip:
                 for p in extract_phones_from_text(snip):
                     if p not in all_phones:
-                        all_phones.add(p)
                         sources.append({"phone": p, "source": "AI搜索", "title": r.get("title", "")})
         if all_phones:
             _log("  ok AI找到: " + " | ".join(all_phones))
-        _log(f"  ✗ AI搜索未找到电话")
+        if not all_phones:
+            _log(f"  ✗ AI搜索未找到电话")
     except Exception as _ex:
         _log(f"  ✗ AI搜索失败: {str(_ex)[:40]}")
-
     # 标记来源可信度
     confidence_map = {
         "招标数据库": "high",
