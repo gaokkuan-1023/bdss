@@ -280,16 +280,41 @@ def download(tid):
 
 def _save_result(t, tid):
     wb = Workbook()
+    
+    # Sheet 1: 搜索结果
     ws = wb.active
-    ws.title = "获客结果"
+    ws.title = "搜索结果"
     header = t["companies"][0]["header"] if t["companies"] else []
-    ws.append(header + ["搜到电话", "电话数量"])
+    ws.append(header + ["搜到电话", "电话数量", "来源"])
     for r in t["results"]:
-        ws.append(r["row"] + [" | ".join(r["phones"]), len(r["phones"])])
+        phones = r.get("phones", [])
+        ws.append(r.get("row", []) + [" | ".join(phones), len(phones), ""])
     phone_col = len(header) + 1
     if phone_col:
         ws.cell(row=1, column=phone_col).value = "搜到电话"
-        ws.column_dimensions[chr(64 + phone_col) if phone_col <= 26 else "A"].width = 40
+        ws.column_dimensions["A"].width = 30
+        col_letter = chr(64 + phone_col) if phone_col <= 26 else "A"
+        ws.column_dimensions[col_letter].width = 40
+    
+    # Sheet 2: 统计汇总
+    ws2 = wb.create_sheet("统计汇总")
+    total = len(t["results"])
+    found = sum(1 for r in t["results"] if r.get("phones"))
+    total_phones = sum(len(r.get("phones", [])) for r in t["results"])
+    ws2.append(["指标", "数值"])
+    ws2.append(["公司总数", total])
+    ws2.append(["找到电话的公司", found])
+    ws2.append(["电话总数", total_phones])
+    ws2.append(["成功率", f"{found/total*100:.1f}%" if total else "0%"])
+    
+    # Sheet 3: 未找到的公司
+    not_found = [r for r in t["results"] if not r.get("phones")]
+    if not_found:
+        ws3 = wb.create_sheet("未找到电话")
+        ws3.append(["公司名称"])
+        for r in not_found:
+            ws3.append([r.get("company", "")])
+    
     wb.save(str(UPLOAD_DIR / f"{tid}_result.xlsx"))
 
 
