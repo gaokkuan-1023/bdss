@@ -117,6 +117,32 @@ def extract_phones_from_text(text: str) -> list[str]:
     return sorted(phones)
 
 
+SEARCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+}
+
+
+def search_bidding(keyword: str, max_pages: int = 1) -> dict:
+    """从招标采购导航网搜招标公告，提取电话"""
+    all_phones = set()
+    items = []
+    for page in range(1, max_pages + 1):
+        url = f"https://www.okcis.cn/search?q={urllib.parse.quote(keyword)}&page={page}"
+        try:
+            req = urllib.request.Request(url, headers=SEARCH_HEADERS)
+            resp = urllib.request.urlopen(req, timeout=10)
+            html = resp.read().decode("utf-8", errors="replace")
+            for m in re.finditer(r"1[3-9]\d{9}", html):
+                all_phones.add(m.group())
+            for m in re.finditer(r'<div class="tit">\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
+                items.append({"title": m.group(2).strip(), "url": m.group(1)})
+        except Exception:
+            pass
+    return {"phones": sorted(all_phones), "phone_count": len(all_phones), "items": items[:10], "source": "招标采购导航网"}
+
+
 def search_baidumap_poi(company: str) -> list[dict]:
     """通过百度地图 Place API 搜索公司 POI 及电话"""
     ak = os.environ.get("BAIDU_MAP_AK", "")
