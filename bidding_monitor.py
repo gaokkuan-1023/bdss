@@ -448,6 +448,7 @@ def get_db() -> sqlite3.Connection:
             email TEXT DEFAULT '',
             matched_at REAL NOT NULL,
             status TEXT DEFAULT 'new',
+            relevance INTEGER DEFAULT 0,
             notes TEXT DEFAULT ''
         )
     """)
@@ -475,6 +476,12 @@ def save_items(items: list[dict]) -> int:
             (title[:80], item.get("source", "")),
         ).fetchone()
         if not exists:
+            # AI 分析相关性
+            try:
+                relevance = ai_analyze_bidding(title).get("relevance", 0)
+            except Exception:
+                relevance = 0
+            
             detail = {"contact": "", "email": ""}
             if i < 10 and item.get("url"):
                 detail = extract_detail_phone(item["url"])
@@ -499,9 +506,9 @@ def save_items(items: list[dict]) -> int:
                 except Exception:
                     pass
             conn.execute(
-                "INSERT INTO bidding_items (title, url, source, buyer, contact, phone, email, matched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO bidding_items (title, url, source, buyer, contact, phone, email, matched_at, status, relevance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)",
                 (title[:200], item.get("url", ""), item.get("source", ""),
-                 buyer, detail.get("contact", ""), phone, detail.get("email", ""), time.time()),
+                 buyer, detail.get("contact", ""), phone, detail.get("email", ""), time.time(), relevance),
             )
             new_count += 1
     conn.commit()
@@ -522,7 +529,7 @@ def get_stats() -> dict:
     new_ = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
     recent = conn.execute(
-        "SELECT id, title, source, buyer, contact, phone, email, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
+        "SELECT id, title, source, buyer, contact, phone, email, matched_at, status, relevance FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
     ).fetchall()
     logs = conn.execute(
         "SELECT scanned_at, total_found, sources FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
@@ -531,7 +538,7 @@ def get_stats() -> dict:
         "total": total, "new": new_, "contacted": contacted,
         "recent": [{"id": r[0], "title": r[1], "source": r[2], "buyer": r[3],
                      "contact": r[4], "phone": r[5], "email": r[6],
-                     "time": r[7], "status": r[8]} for r in recent],
+                     "time": r[7], "status": r[8], "relevance": r[9]} for r in recent],
         "logs": [{"time": r[0], "found": r[1], "sources": json.loads(r[2])} for r in logs],
     }
 
