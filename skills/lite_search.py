@@ -290,6 +290,27 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             except Exception as ex:
                 _log(f"  ✗ 搜索异常: {str(ex)[:40]}")
 
+    # 5. AI 搜索兜底
+    if not all_phones:
+        _log(f"5/5 AI搜索查询: {company}")
+        try:
+            from skills.ai import AISearch
+            ai = AISearch()
+            results = ai.search(company, max_results=3)
+            for r in results:
+                snip = r.get("snippet", "")
+                if snip:
+                    for p in extract_phones_from_text(snip):
+                        if p not in all_phones:
+                            all_phones.add(p)
+                            sources.append({"phone": p, "source": "AI搜索", "title": r.get("title", "")})
+            if all_phones:
+                _log("  ok AI找到: " + " | ".join(all_phones))
+            else:
+                _log("  -- AI搜索未找到电话")
+        except Exception as _ex:
+            _log(f"  -- AI搜索失败: {str(_ex)[:40]}")
+
     return {
         "company": company,
         "phones": sorted(all_phones),
