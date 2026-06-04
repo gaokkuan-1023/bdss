@@ -184,8 +184,28 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
         if steps is not None:
             steps.append(msg)
 
+    # 招标数据库查缓存（已有的线索中可能已有电话）
+    _log(f"0/4 招标数据库查询: {company}")
+    try:
+        from bidding_monitor import get_db, close_db
+        _conn = get_db()
+        _rows = _conn.execute(
+            "SELECT phone FROM bidding_items WHERE (buyer LIKE ? OR title LIKE ?) AND phone != '' ORDER BY matched_at DESC LIMIT 5",
+            (f"%{company}%", f"%{company}%"),
+        ).fetchall()
+        if _rows:
+            for _r in _rows:
+                for p in extract_phones_from_text(_r[0]):
+                    all_phones.add(p)
+                    sources.append({"phone": p, "source": "招标数据库", "title": ""})
+            _log(f"  ✓ 招标数据库找到电话: {' | '.join(all_phones)}")
+        else:
+            _log(f"  - 招标数据库未找到")
+    except:
+        _log(f"  - 招标数据库查询跳过")
+
     # 1. 百度地图 POI（最准）
-    _log(f"1/3 百度地图POI查询: {company}")
+    _log(f"1/4 百度地图POI查询: {company}")
     pois = search_baidumap_poi(company)
     for poi in pois:
         if poi["phone"]:
