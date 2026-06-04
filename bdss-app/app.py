@@ -182,12 +182,42 @@ def monitor_scan():
 @app.route("/api/monitor/status", methods=["POST"])
 def monitor_update_status():
     body = request.get_json(silent=True) or {}
-    item_id = body.get("id")
-    status = body.get("status", "new")
-    notes = body.get("notes", "")
-    if item_id:
-        update_status(item_id, status, notes)
     return jsonify(success=True)
+
+
+@app.route("/api/search_history")
+def api_search_history():
+    """搜索历史与统计"""
+    from utils.cache import SearchCache
+    cache = SearchCache()
+    conn = cache.conn
+    try:
+        total = conn.execute("SELECT COUNT(DISTINCT company) FROM search_cache").fetchone()[0]
+        total_res = conn.execute("SELECT COUNT(*) FROM search_cache").fetchone()[0]
+        recent = conn.execute("SELECT company, engine, cached_at FROM search_cache ORDER BY cached_at DESC LIMIT 15").fetchall()
+        by_eng = conn.execute("SELECT engine, COUNT(*) as c FROM search_cache GROUP BY engine ORDER BY c DESC").fetchall()
+        return jsonify({"total_companies": total, "total_searches": total_res,
+            "recent": [{"company": r[0], "engine": r[1], "time": r[2]} for r in recent],
+            "by_engine": [{"engine": r[0], "count": r[1]} for r in by_eng]})
+    except Exception as e:
+        return jsonify({"error": str(e)[:60]})
+
+
+@app.route("/api/export_crm")
+def api_export_crm():
+    """CRM 兼容 CSV 导出"""
+    from bidding_monitor import get_stats
+    import csv, io
+    from flask import Response as _R
+    stats = get_stats()
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["title","buyer","contact","phone","email","source","status"])
+    for i in stats["recent"]:
+        w.writerow([i.get("title",""),i.get("buyer",""),i.get("contact",""),i.get("phone",""),
+                    i.get("email",""),i.get("source",""),i.get("status","")])
+    return _R(out.getvalue(), mimetype="text/csv",
+              headers={"Content-Disposition":"attachment; filename=bdss_crm_export.csv"})
 
 
 @app.route("/upload", methods=["POST"])
