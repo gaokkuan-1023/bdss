@@ -528,6 +528,47 @@ def close_db():
         _db_conn = None
 
 
+
+def send_wechat_notification(title: str, content: str, send_key: str = "") -> bool:
+    """通过 Server酱 推送微信通知"""
+    if not send_key:
+        send_key = os.environ.get("BDSS_WECHAT_SENDKEY", "")
+    if not send_key:
+        logger.debug("未配置 BDSS_WECHAT_SENDKEY，跳过微信通知")
+        return False
+    url = f"https://sctapi.ftqq.com/{send_key}.send"
+    try:
+        data = urllib.parse.urlencode({"title": title, "desp": content}).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(resp.read())
+        return result.get("code") == 0
+    except Exception as e:
+        logger.warning(f"微信通知失败: {e}")
+        return False
+
+
+def scan_with_notify() -> dict:
+    """扫描并发送微信通知"""
+    from pathlib import Path
+    env_path = Path(__file__).parent / ".env"
+    send_key = ""
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("BDSS_WECHAT_SENDKEY="):
+                send_key = line.split("=", 1)[1].strip().strip("'\"")
+
+    result = scan()
+    if result["new_saved"] > 0 and send_key:
+        title = f'BDSS: 发现 {result["new_saved"]} 条新招标'
+        lines = [f"### {title}\n"]
+        for s in result["per_source"]:
+            if s["found"] > 0:
+                lines.append(f"- {s['source']}: {s['found']} 条")
+        send_wechat_notification(title, "\n".join(lines), send_key)
+    return result
+
 def scan() -> dict:
     """执行一次完整扫描"""
     result = scan_all_sources()
