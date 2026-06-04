@@ -1,8 +1,8 @@
 """
 公司联系电话爬虫 - 主入口
 
-支持搜索引擎: baidu / google / bing / sogou / baidumap
-多引擎合并搜索: --all (自动并行跑 baidu + bing + sogou，合并结果去重)
+支持搜索引擎: ai / baidumap
+
 """
 
 import argparse
@@ -15,10 +15,6 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from skills.baidu import BaiduSearch
-from skills.google import GoogleSearch
-from skills.bing import BingSearch
-from skills.sogou import SogouSearch
 from skills.ai import AISearch
 from skills.baidumap import query_baidu_map_poi as query_map_poi
 from extractors.phone import PhoneExtractor
@@ -53,15 +49,11 @@ CONFIDENCE_LEVELS = {
 
 # 搜索引擎注册表
 ENGINE_REGISTRY = {
-    'baidu': BaiduSearch,
-    'google': GoogleSearch,
-    'bing': BingSearch,
-    'sogou': SogouSearch,
     'ai': AISearch,
 }
 
 # 多引擎合并搜索时默认使用的引擎（跳过 google，需要代理）
-MULTI_ENGINES = ['baidu', 'bing', 'sogou']
+MULTI_ENGINES = []
 
 # 全局缓存实例
 _cache = SearchCache()
@@ -433,9 +425,9 @@ def main():
     )
     parser.add_argument('company', nargs='?', help='公司名称')
     parser.add_argument('-f', '--file', help='公司名称列表文件（每行一个）')
-    parser.add_argument('--engine', '-e', default='baidu',
+    parser.add_argument('--engine', '-e', default='ai',
                         choices=list(ENGINE_REGISTRY.keys()),
-                        help='搜索引擎 (默认: baidu，可选: ai)')
+                        help='搜索引擎 (默认: ai)')
     parser.add_argument('--all', '-a', action='store_true',
                         help='多引擎合并搜索 (baidu + bing + sogou，自动去重)')
     parser.add_argument('--max', '-m', type=int, default=5,
