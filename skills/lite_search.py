@@ -238,6 +238,38 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
             logger.debug(f"顺企网查询失败: {_ex}")
 
+        except Exception as _ex:
+            _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
+            logger.debug(f"顺企网查询失败: {_ex}")
+
+    # 4. 网页搜索：搜"公司名 联系电话"并打开结果页
+    if not all_phones:
+        queries = [f"{company} 联系电话", f"{company} 电话", f"{company} 联系方式"]
+        for i, q in enumerate(queries[:2]):
+            _log(f"4/{3+i+1} 搜索: \"{q}\"")
+            try:
+                results = search_bing(q, max_results=3)
+                if not results:
+                    results = search_baidu(q, max_results=3)
+                if not results:
+                    _log(f"  ✗ 搜索引擎无结果")
+                    continue
+                for r in results:
+                    page_text = fetch_page_text(r["url"])
+                    text = r.get("snippet", "") + " " + page_text
+                    for p in extract_phones_from_text(text):
+                        if p not in all_phones:
+                            all_phones.add(p)
+                            sources.append({"phone": p, "source": r["url"][:50], "title": r["title"][:40]})
+                    if all_phones:
+                        break
+                if all_phones:
+                    _log(f"  ✓ 搜索找到电话: {' | '.join(all_phones)}")
+                else:
+                    _log(f"  ✗ 搜索未找到电话")
+            except Exception as ex:
+                _log(f"  ✗ 搜索异常: {str(ex)[:40]}")
+
     return {
         "company": company,
         "phones": sorted(all_phones),
