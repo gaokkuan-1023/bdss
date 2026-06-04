@@ -95,7 +95,7 @@ _ai_config = {"api_key": "", "model": "gpt-4o-mini"}
 @bp.route("/api/ai_config", methods=["GET", "POST"])
 def api_ai_config():
     """获取/更新 AI 配置"""
-    config_path = Path(__file__).parent / "ai_config.json"
+    config_path = Path("/tmp/bdss_ai_config.json")
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         _ai_config.update(data)
