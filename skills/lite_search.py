@@ -92,7 +92,7 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             steps.append(msg)
 
     # 招标数据库查缓存（已有的线索中可能已有电话）
-    _log(f"0/4 招标数据库查询: {company}")
+    _log(f"0/5 招标数据库查询: {company}")
     try:
         from bidding_monitor import get_db, close_db
         _conn = get_db()
@@ -112,7 +112,7 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
         _log(f"  - 招标数据库查询跳过")
 
     # 1. 百度地图 POI（最准）
-    _log(f"1/4 百度地图POI查询: {company}")
+    _log(f"1/5 百度地图POI查询: {company}")
     pois = search_baidumap_poi(company)
     for poi in pois:
         if poi["phone"]:
@@ -129,7 +129,7 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
     if not all_phones:
         short_name = company.replace("有限公司", "").replace("股份有限公司", "").replace("集团", "").replace("(", "").replace(")", "").replace("（", "").replace("）", "")
         if short_name != company:
-            _log(f"2/3 缩短名称查询: {short_name}")
+            _log(f"2/5 缩短名称查询: {short_name}")
             pois = search_baidumap_poi(short_name)
             for poi in pois:
                 if poi["phone"]:
@@ -142,11 +142,11 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             else:
                 _log(f"  ✗ 缩短名称也未找到电话")
         else:
-            _log(f"2/3 公司名无需缩短，跳过")
+            _log(f"2/5 公司名无需缩短，跳过")
 
     # 3. 顺企网补充
     if not all_phones:
-        _log("3/3 顺企网查询中...")
+        _log("3/5 顺企网查询中...")
         try:
             key = urllib.parse.quote(company[:6])
             url = f"https://www.11467.com/company/search.php?key={key}"
@@ -165,15 +165,12 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
             _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
             logger.debug(f"顺企网查询失败: {_ex}")
 
-        except Exception as _ex:
-            _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
-            logger.debug(f"顺企网查询失败: {_ex}")
 
-    # 4. 网页搜索：搜"公司名 联系电话"并打开结果页
+    # 4. 网页搜索
     if not all_phones:
         queries = [f"{company} 联系电话", f"{company} 电话", f"{company} 联系方式"]
         for q in queries[:1]:
-            _log(f"4/4 搜索: \"{q}\"")
+            _log(f"4/5 搜索: \"{q}\"")
             try:
                 results = search_bing(q, max_results=3)
                 if not results:
