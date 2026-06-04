@@ -90,7 +90,7 @@ def collect_ccgp(keyword: str, max_pages: int = 2) -> list[dict]:
             "agentName": "",
         }
         url = "http://search.ccgp.gov.cn/bxsearch?" + urllib.parse.urlencode(params)
-        time.sleep(3)  # 反爬
+        time.sleep(2)  # 反爬
         html = _get(url, timeout=10, headers={"Cookie": "test=1", "Referer": "http://search.ccgp.gov.cn/"})
         if not html:
             break
@@ -359,7 +359,7 @@ CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理",
 # 招标网站配置
 BIDDING_SOURCES = [
     # --- 核心政府采购 ---
-    {"name": "中国政府采购网", "type": "ccgp", "keywords": WATER_CHEM_KEYWORDS, "max_pages": 2},
+    {"name": "中国政府采购网", "type": "ccgp", "keywords": WATER_CHEM_KEYWORDS, "max_pages": 1},
     # --- Bibi招标网 ---
     {"name": "比比招标网", "type": "rss",
      "keywords": WATER_CHEM_KEYWORDS[:3],
@@ -450,12 +450,15 @@ def get_db() -> sqlite3.Connection:
             status TEXT DEFAULT 'new',
             relevance INTEGER DEFAULT 0,
             notes TEXT DEFAULT ''
-        )
     """)
+    # 数据库迁移：旧表缺少 relevance 列时补充
+    try:
+        _db_conn.execute("SELECT relevance FROM bidding_items LIMIT 1")
+    except Exception:
+        _db_conn.execute("ALTER TABLE bidding_items ADD COLUMN relevance INTEGER DEFAULT 0")
     _db_conn.execute("""
         CREATE TABLE IF NOT EXISTS monitor_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scanned_at REAL NOT NULL,
             total_found INTEGER DEFAULT 0,
             sources TEXT DEFAULT '[]'
         )
