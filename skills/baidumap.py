@@ -1,15 +1,7 @@
-"""百度地图Skill — 通过官方API查询POI电话"""
-import json
-import os
-import re
-import sys
+import os, sys, json, logging, re
 import urllib.request
-import logging
 from pathlib import Path
 from urllib.parse import quote
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from playwright.sync_api import sync_playwright
 from extractors.phone import PhoneExtractor
 
 logger = logging.getLogger(__name__)
@@ -54,81 +46,6 @@ def query_baidu_map_poi(company: str) -> dict:
                     return result
     except Exception as e:
         logger.warning(f"    [!] 官方API请求失败: {e}")
-
-    with sync_playwright() as p:
-        b = None
-        try:
-            try:
-                b = p.chromium.launch(headless=True, channel='chrome')
-            except Exception:
-                b = p.chromium.launch(headless=True)
-        except Exception as e:
-            logger.warning(f"    [!] 百度地图浏览器启动失败，跳过: {e}")
-            return result
-        ctx = b.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-        )
-        page = ctx.new_page()
-        page.set_default_timeout(30000)
-
-        # 直接打开搜索结果的静态页面
-        wd = quote(company)
-        search_url = f"{_BASE}/search/{wd}"
-        logger.info(f"    [百度地图] 打开: {search_url}")
-        try:
-            page.goto(search_url, wait_until="networkidle")
-        except Exception:
-            pass  # 超时继续
-        page.wait_for_timeout(5000)
-
-        # 获取页面渲染文本
-        text = page.evaluate("() => document.body.innerText")
-        if not text:
-            b.close()
-            return result
-
-        # 提取电话
-        phones = extractor.extract(text)
-        result["all_phones"] = phones
-        if phones:
-            result["phone"] = phones[0]
-            result["source"] = "百度地图搜索页"
-
-        # 提取地址
-        for line in text.split("\n"):
-            if "地址" in line or "位置" in line:
-                m = re.search(r"地址[：:]\s*(.+)", line)
-                if m:
-                    result["address"] = m.group(1).strip()
-                    break
-            # 也提取公司名（搜索结果中第一个匹配的标题）
-            if company[:2] in line and not result["name"] or result["name"] == company:
-                if len(line) > 4 and len(line) < 100:
-                    result["name"] = line.strip()
-
-        if result["all_phones"]:
-            logger.info(f"    [OK] 百度地图: {result['name']} - {', '.join(result['all_phones'])}")
-        else:
-            logger.info(f"    [-] 百度地图搜索页未发现电话")
-            # 也试试搜索建议API作为补充
-            try:
-                api = ctx.request
-                su_resp = api.get(f"{_BASE}/su?wd={wd}&cid=131&rn=5")
-                raw = su_resp.text()
-                if raw:
-                    # 在建议数据中搜电话
-                    all_phones2 = extractor.extract(raw)
-                    for p in all_phones2:
-                        if p not in result["all_phones"]:
-                            result["all_phones"].append(p)
-                    if result["all_phones"]:
-                        result["source"] = "百度地图建议"
-                        logger.info(f"    [OK] 百度地图建议: {', '.join(result['all_phones'])}")
-            except Exception as _ex:
-                pass  # logger.debug(f"忽略: {_ex}")
-
-        b.close()
 
     return result
 
