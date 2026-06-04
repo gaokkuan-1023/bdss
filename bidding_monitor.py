@@ -272,10 +272,19 @@ def collect_html_list(url: str, source_name: str = "招标列表",
 
 # 行业关键词 — 水处理药剂
 WATER_CHEM_KEYWORDS = [
+    # 水处理药剂核心词
     "水处理药剂", "阻垢剂", "杀菌剂", "缓蚀剂", "絮凝剂",
-    "循环水处理", "反渗透药剂", "脱盐水药剂",
-    "电厂药剂", "污水处理药剂", "冷却水处理",
+    "循环水处理", "反渗透药剂",
+    "冷却水处理", "清洗预膜",
+    # 行业场景词
+    "电厂药剂", "污水处理药剂", "锅炉水处理",
+    # 采购方式词
+    "水处理剂 采购", "水处理 招标",
 ]
+
+# CCGP 扫描使用的子集（太多关键词会让扫描过慢）
+CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
+OKCIS_KEYWORDS = ["水处理药剂", "阻垢剂"]
 
 # 招标网站配置
 BIDDING_SOURCES = [
@@ -311,16 +320,16 @@ def scan_all_sources() -> dict:
         items = []
         try:
             if stype == "ccgp":
-                for kw in keywords[:2]:
+                for kw in CCGP_KEYWORDS:
                     items.extend(collect_ccgp(kw, max_pages))
             elif stype == "rss":
-                for kw in keywords[:2]:
+                for kw in CCGP_KEYWORDS[:2]:
                     items.extend(collect_rss(kw, src.get("allowed_domains")))
             elif stype == "html":
                 url_template = src.get("url", "")
                 title_include = src.get("title_include", [])
                 title_exclude = src.get("title_exclude", [])
-                for kw in keywords[:1]:
+                for kw in OKCIS_KEYWORDS:
                     url = url_template.replace("{keyword}", urllib.parse.quote(kw))
                     raw_items = collect_html_list(url, source_name)
                     for item in raw_items:
@@ -330,7 +339,6 @@ def scan_all_sources() -> dict:
                         if title_exclude and any(k in t for k in title_exclude):
                             continue
                         items.append(item)
-
         except Exception as e:
             logger.error(f"Source failed: {source_name}: {e}")
 
