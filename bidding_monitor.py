@@ -1,6 +1,7 @@
 """BDSS 招标监控引擎 v2 — 4 种采集策略覆盖多源招标网站"""
 from typing import Optional, List
 import logging
+import json
 import re
 import sqlite3
 import time
@@ -357,7 +358,7 @@ def get_db() -> sqlite3.Connection:
     if _db_conn is not None:
         return _db_conn
     _db_conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("""
+    _db_conn.execute("""
         CREATE TABLE IF NOT EXISTS bidding_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -370,7 +371,7 @@ def get_db() -> sqlite3.Connection:
             notes TEXT DEFAULT ''
         )
     """)
-    conn.execute("""
+    _db_conn.execute("""
         CREATE TABLE IF NOT EXISTS monitor_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scanned_at REAL NOT NULL,
@@ -378,8 +379,8 @@ def get_db() -> sqlite3.Connection:
             sources TEXT DEFAULT '[]'
         )
     """)
-    conn.commit()
-    return conn
+    _db_conn.commit()
+    return _db_conn
 
 def save_items(items: list[dict]) -> int:
     """保存条目，返回新增数"""
