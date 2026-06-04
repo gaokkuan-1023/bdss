@@ -52,18 +52,11 @@ def search_baidumap_poi(company: str) -> list[dict]:
     """通过百度地图 Place API 搜索公司 POI 及电话"""
     ak = os.environ.get("BAIDU_MAP_AK", "")
     if not ak:
-        # 尝试读 .env 文件
-        env_path = Path(__file__).parent.parent / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                line = line.strip()
-                if line.startswith("BAIDU_MAP_AK="):
-                    ak = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
+        from utils.env import get_ak
+        ak = get_ak()
     if not ak:
         logger.warning("未配置 BAIDU_MAP_AK，跳过百度地图查询")
         return []
-
     query = urllib.parse.quote(company)
     region = urllib.parse.quote("全国")
     url = f"https://api.map.baidu.com/place/v2/search?query={query}&region={region}&output=json&ak={ak}"
