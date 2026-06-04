@@ -16,7 +16,7 @@ def search_bing(query: str, max_results: int = 5) -> list[dict]:
     url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&count={max_results}"
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
+        resp = urllib.request.urlopen(req, timeout=5)
         html = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
         logger.warning(f"Bing 搜索失败: {e}")
@@ -36,7 +36,7 @@ def search_baidu(query: str, max_results: int = 5) -> list[dict]:
     url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}&ie=utf-8"
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
+        resp = urllib.request.urlopen(req, timeout=5)
         html = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
         logger.warning(f"百度搜索失败: {e}")

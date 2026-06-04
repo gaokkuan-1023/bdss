@@ -170,8 +170,8 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
     # 4. 网页搜索：搜"公司名 联系电话"并打开结果页
     if not all_phones:
         queries = [f"{company} 联系电话", f"{company} 电话", f"{company} 联系方式"]
-        for i, q in enumerate(queries[:2]):
-            _log(f"4/{3+i+1} 搜索: \"{q}\"")
+        for q in queries[:1]:
+            _log(f"4/4 搜索: \"{q}\"")
             try:
                 results = search_bing(q, max_results=3)
                 if not results:
