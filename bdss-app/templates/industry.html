@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BDSS 行业拓客</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;padding:24px}
+.nav{display:flex;gap:16px;margin-bottom:24px}
+.nav a{color:#94a3b8;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:14px}
+.nav a.active{color:#38bdf8;background:rgba(56,189,248,.1)}
+h1{font-size:20px;font-weight:700;margin-bottom:4px}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:12px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.row input{flex:1;min-width:150px;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px}
+.btn{padding:8px 16px;border-radius:6px;border:none;font-weight:600;cursor:pointer;font-size:13px;display:inline-block;text-decoration:none;text-align:center}
+.btn-primary{background:#2563eb;color:#fff}
+.btn-primary:disabled{opacity:.4}
+.btn-green{background:#059669;color:#fff}
+.btn-purple{background:#6366f1;color:#fff}
+.btn-ghost{background:transparent;border:1px solid #334155;color:#94a3b8}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #1e293b;white-space:nowrap}
+th{color:#94a3b8;font-weight:600;font-size:12px}
+.phone{color:#22c55e}
+.log-box{font-size:12px;color:#94a3b8;background:#0f172a;padding:10px;border-radius:6px;margin-top:8px;max-height:300px;overflow-y:auto}
+.scroll-table{overflow-x:auto;margin-top:8px}
+.step2-box{display:none;margin-top:10px}
+.nav-item{color:#94a3b8;text-decoration:none;padding:6px 12px;border-radius:6px;font-size:13px;transition:.2s}
+.nav-item:hover{color:#e2e8f0;background:rgba(255,255,255,.04)}
+.nav-item.active{color:#38bdf8;background:rgba(56,189,248,.1)}
+
+
+
+
+
+
+</style>
+</head>
+<body>
+<div class=nav>
+<a href=/ class="nav-item">📤 搜电话</a>
+<a href=/industry class="nav-item active">🏭 拓客</a>
+<a href=/monitor class="nav-item">📡 招标</a>
+<span style="flex:1"></span>
+</div>
+<h1>行业拓客</h1>
+<div style="display:flex;gap:6px;margin-bottom:8px">
+<button class="btn btn-ghost" id=aiConfigBtn onclick="toggleAiConfig()" style="font-size:11px;padding:3px 10px">⚙️ AI配置</button>
+</div>
+<div id=aiConfigPanel class=card style="display:none;padding:12px;margin-bottom:8px">
+<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px">
+<span style=color:#94a3b8>API Key:</span>
+<input id=aiApiKey style="width:200px;padding:4px 8px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:12px" placeholder="sk-xxx">
+<span style=color:#94a3b8>模型:</span>
+<select id=aiModel style="padding:4px 8px;background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:12px">
+<option>gpt-4o-mini</option><option>gpt-4o</option><option>deepseek-chat</option><option>deepseek-reasoner</option><option>qwen-plus</option><option>glm-4-plus</option><option>moonshot-v1-auto</option>
+</select>
+<button class="btn btn-primary" onclick="saveAiConfig()" style="font-size:11px;padding:3px 10px">保存</button>
+<span id=aiConfigStatus style="color:#22c55e;font-size:11px"></span>
+</div>
+</div>
+<div class=card>
+<div class=row>
+<input id=kwInput placeholder="多个关键词用逗号分隔，如：水处理药剂,阻垢剂,杀菌剂" value="热电">
+<button class="btn btn-primary" id=searchBtn onclick="doSearch()">搜索</button>
+</div>
+
+<div id=resultArea style=display:none>
+<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+<span id=resultCount style="color:#94a3b8;font-size:13px"></span>
+<a href=# id=searchExcel class="btn btn-ghost" style="font-size:12px;padding:4px 12px;display:none">下载名单</a>
+<button class="btn btn-green" id=step2Btn style="font-size:12px;padding:4px 12px;display:none">查电话</button>
+</div>
+<div class=scroll-table><table><thead><tr><th>#</th><th>公司名称</th><th>电话</th><th>状态</th></tr></thead><tbody id=resultBody></tbody></table></div>
+
+<div class=step2-box id=step2Result>
+<div style="margin-top:10px">
+<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:4px">
+<span id=step2Progress>准备中...</span>
+<span id=step2PhoneCount></span>
+</div>
+<div style="background:#0f172a;border-radius:6px;height:6px;overflow:hidden">
+<div id=step2Bar style="height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#a78bfa);border-radius:6px;transition:width .5s"></div>
+</div>
+</div>
+<div class=log-box id=step2Log></div>
+<div style="display:flex;gap:6px;margin-top:8px">
+<a href=# id=step2Download class="btn btn-primary" style="font-size:12px;padding:4px 14px">下载结果</a>
+<button class="btn btn-purple" id=step2Outcall style="font-size:12px;padding:4px 14px">提交外呼</button>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+var step2JobId = null;
+var step2PollTimer = null;
+
+function doSearch(){
+  var kw=document.getElementById("kwInput").value.trim();
+  if(!kw)return;
+  var self=document.getElementById("searchBtn");
+  self.disabled=true;
+  self.textContent="搜索中...";
+  document.getElementById("resultArea").style.display="none";
+  document.getElementById("step2Result").className="step2-box";
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","/api/industry_search?keyword="+encodeURIComponent(kw),true);
+  xhr.onload=function(){
+    var d=JSON.parse(xhr.responseText);
+    document.getElementById("resultArea").style.display="block";
+    document.getElementById("resultCount").textContent="找到 "+d.total+"家公司";
+    var html="";
+    for(var i=0;i<d.companies.length;i++){
+      var c=d.companies[i];
+      html+="<tr><td>"+(i+1)+"</td><td>"+c.name+"</td><td class=phone>"+(c.phone||"")+"</td><td>"+(c.status||"")+"</td></tr>";
+    }
+    document.getElementById("resultBody").innerHTML=html;
+    document.getElementById("searchExcel").style.display="inline-block";
+    document.getElementById("searchExcel").href="/api/download/"+((d.excel_url||"").replace("/api/download/",""));
+    document.getElementById("step2Btn").style.display="inline-block";
+    document.getElementById("step2Btn").onclick=function(){startStep2(d.companies)};
+    self.disabled=false;
+    self.textContent="搜索";
+    document.getElementById("resultArea").scrollIntoView({behavior:"smooth",block:"start"});
+  };
+  xhr.send();
+}
+
+function startStep2(companies){
+  var btn=document.getElementById("step2Btn");
+  btn.disabled=true;
+  btn.textContent="查电话中...";
+  document.getElementById("step2Result").className="step2-box";
+  document.getElementById("step2Result").style.display="block";
+  document.getElementById("step2Bar").style.width="0%";
+  document.getElementById("step2Progress").textContent="正在搜索第 1/"+companies.length+" 家公司...";
+  var xhr=new XMLHttpRequest();
+  xhr.open("POST","/api/step2_start",true);
+  xhr.setRequestHeader("Content-Type","application/json");
+  xhr.onload=function(){
+    var d=JSON.parse(xhr.responseText);
+    step2JobId=d.job_id;
+    step2PollTimer=setInterval(function(){pollStep2()},1000);
+  };
+  xhr.send(JSON.stringify({companies:companies}));
+}
+
+function pollStep2(){
+  if(!step2JobId)return;
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","/api/step2_progress/"+step2JobId,true);
+  xhr.onload=function(){
+    var d=JSON.parse(xhr.responseText);
+    var pct=d.total>0?Math.round(d.done/d.total*100):0;
+    document.getElementById("step2Bar").style.width=pct+"%";
+    document.getElementById("step2Progress").textContent="正在搜索第 "+d.done+"/"+d.total+" 家公司...";
+    document.getElementById("step2PhoneCount").textContent="已找到 "+d.phones+" 个电话";
+    document.getElementById("step2Log").textContent=d.log.join("\n");
+    document.getElementById("step2Log").scrollTop=document.getElementById("step2Log").scrollHeight;
+    if(d.status=="done"){
+      clearInterval(step2PollTimer);
+      document.getElementById("step2Progress").textContent="完成! 共找到 "+d.phones+" 个电话";
+      document.getElementById("step2Bar").style.width="100%";
+      document.getElementById("step2Download").href=d.excel_url;
+      // 更新表格电话列
+      if(d.results&&d.results.length){
+        var rows=document.getElementById("resultBody").children;
+        for(var ri=0;ri<rows.length&&ri<d.results.length;ri++){
+          var phoneTd=rows[ri].querySelector("td:nth-child(3)");
+          if(phoneTd&&d.results[ri].phone)phoneTd.textContent=d.results[ri].phone;
+        }
+      }
+      document.getElementById("step2Outcall").onclick=function(){
+        var x2=new XMLHttpRequest();
+        x2.open("POST","/api/outcall/push",true);
+        x2.setRequestHeader("Content-Type","application/json");
+        x2.onload=function(){var r=JSON.parse(x2.responseText);alert(r.success?"推送成功 "+r.pushed+"个":"推送失败");};
+        x2.send(JSON.stringify({contacts:d.contacts}));
+      };
+      document.getElementById("step2Result").scrollIntoView({behavior:"smooth",block:"start"});
+      document.getElementById("step2Btn").disabled=false;
+      document.getElementById("step2Btn").textContent="查电话";
+    }
+  };
+  xhr.send();
+}
+function toggleAiConfig(){
+  var p=document.getElementById("aiConfigPanel");
+  p.style.display=p.style.display=="none"?"block":"none";
+  if(p.style.display=="block"){
+    var x=new XMLHttpRequest();
+    x.open("GET","/api/ai_config",true);
+    x.onload=function(){
+      var d=JSON.parse(x.responseText);
+      document.getElementById("aiApiKey").value=d.api_key||"";
+      document.getElementById("aiModel").value=d.model||"gpt-4o-mini";
+    };
+    x.send();
+  }
+}
+function saveAiConfig(){
+  var key=document.getElementById("aiApiKey").value.trim();
+  var model=document.getElementById("aiModel").value;
+  var x=new XMLHttpRequest();
+  x.open("POST","/api/ai_config",true);
+  x.setRequestHeader("Content-Type","application/json");
+  x.onload=function(){
+    var d=JSON.parse(x.responseText);
+    document.getElementById("aiConfigStatus").textContent=d.success?"已保存":"保存失败";
+    setTimeout(function(){document.getElementById("aiConfigStatus").textContent="";},3000);
+  };
+  x.send(JSON.stringify({api_key:key,model:model}));
+}
+</script>
+</body>
+</html>
