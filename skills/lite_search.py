@@ -210,14 +210,28 @@ def search_company_phones(company: str, log_detail: bool = False) -> dict:
                         sources.append({"phone": p, "source": "AI搜索", "title": r.get("title", "")})
         if all_phones:
             _log("  ok AI找到: " + " | ".join(all_phones))
-        else:
-            _log("  -- AI搜索未找到电话")
+        _log(f"  ✗ AI搜索未找到电话")
     except Exception as _ex:
-        _log(f"  -- AI搜索失败: {str(_ex)[:40]}")
-        logger.debug(f"AI搜索失败: {_ex}")
+        _log(f"  ✗ AI搜索失败: {str(_ex)[:40]}")
+
+    # 标记来源可信度
+    confidence_map = {
+        "招标数据库": "high",
+        "百度地图POI": "high",
+        "顺企网": "medium",
+        "AI搜索": "medium",
+    }
+    for s in sources:
+        matched = False
+        for prefix, level in confidence_map.items():
+            if s["source"].startswith(prefix):
+                s["confidence"] = level
+                matched = True
+                break
+        if not matched:
+            s["confidence"] = "low"
 
     return {
-        "company": company,
         "phones": sorted(all_phones),
         "phone_count": len(all_phones),
         "sources": sources,
