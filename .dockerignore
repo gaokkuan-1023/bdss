@@ -1,1 +1,12 @@
-.env\n.git\n__pycache__/\n*.pyc\n*.pyo\n.venv\nvenv/\n*.egg-info/\n.gitignore\nLICENSE\nREADME.md\n.DS_Store\n
+.env
+.git
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+.gitignore
+LICENSE
+README.md
+.DS_Store

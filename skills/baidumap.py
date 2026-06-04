@@ -17,19 +17,6 @@ logger = logging.getLogger(__name__)
 _BASE = "https://map.baidu.com"
 from utils.env import get_ak
 _AK = get_ak()
-# 优先从环境变量读取，其次 .env 文件；无配置时 API 通道降级到页面抓取
-_AK = os.environ.get("BAIDU_MAP_AK", "")
-if not _AK:
-    _env = Path(__file__).parent.parent / ".env"
-    if _env.exists():
-        try:
-            for _line in _env.read_text().splitlines():
-                _line = _line.strip()
-                if _line.startswith("BAIDU_MAP_AK="):
-                    _AK = _line.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
-        except Exception as _ex:
-            pass  # logger.debug(f"忽略: {_ex}")
 
 
 def query_baidu_map_poi(company: str) -> dict:
