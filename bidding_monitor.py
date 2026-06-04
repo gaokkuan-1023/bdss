@@ -268,6 +268,54 @@ def collect_html_list(url: str, source_name: str = "招标列表",
     return results[:max_items]
 
 
+# ============ 详情页电话提取 ============
+
+def extract_detail_phone(url: str) -> dict:
+    """打开招标详情页，提取联系人、电话、采购单位"""
+    result = {"buyer": "", "contact": "", "phone": "", "email": ""}
+    if not url or not url.startswith("http"):
+        return result
+    html = _get(url, timeout=10)
+    if not html:
+        return result
+
+    # 提取采购单位/采购人
+    for pattern in [r"采购人[：:]\s*([^\n<,，]{2,40})",
+                    r"采购单位[：:]\s*([^\n<,，]{2,40})",
+                    r"招标人[：:]\s*([^\n<,，]{2,40})",
+                    r"业主[：:]\s*([^\n<,，]{2,40})"]:
+        m = re.search(pattern, html)
+        if m:
+            result["buyer"] = m.group(1).strip()
+            break
+
+    # 提取联系人
+    for pattern in [r"联系人[：:]\s*([^\n<,，]{2,10})",
+                    r"项目联系人[：:]\s*([^\n<,，]{2,10})"]:
+        m = re.search(pattern, html)
+        if m:
+            result["contact"] = m.group(1).strip()
+            break
+
+    # 提取电话（内联正则，保持模块自包含）
+    phones = set()
+    for m in re.finditer(r"(?<!\d)1[3-9]\d{9}(?!\d)", html):
+        phones.add(m.group())
+    for m in re.finditer(r"0\d{2,3}[-\s]?\d{7,8}", html):
+        phones.add(m.group().replace(" ", "-"))
+    for m in re.finditer(r"(?:400|800)[-\s]?\d{3}[-\s]?\d{4}", html):
+        phones.add(m.group().replace(" ", "-"))
+    if phones:
+        result["phone"] = " | ".join(sorted(phones)[:3])
+
+    # 提取邮箱
+    m = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", html)
+    if m:
+        result["email"] = m.group(0)
+
+    return result
+
+
 # ============ 批量扫描 ============
 
 # 行业关键词 — 水处理药剂
@@ -373,9 +421,10 @@ def get_db() -> sqlite3.Connection:
             url TEXT DEFAULT '',
             source TEXT DEFAULT '',
             buyer TEXT DEFAULT '',
+            contact TEXT DEFAULT '',
             phone TEXT DEFAULT '',
+            email TEXT DEFAULT '',
             matched_at REAL NOT NULL,
-            status TEXT DEFAULT 'new',
             notes TEXT DEFAULT ''
         )
     """)
@@ -391,19 +440,29 @@ def get_db() -> sqlite3.Connection:
     return _db_conn
 
 def save_items(items: list[dict]) -> int:
-    """保存条目，返回新增数"""
+    """保存条目并抓取详情页电话，返回新增数"""
     conn = get_db()
     new_count = 0
-    for item in items:
+    for i, item in enumerate(items):
+        title = item.get("title", "")
+        phone = item.get("phone", "")
+        buyer = item.get("buyer", "")
         exists = conn.execute(
-            "SELECT id FROM bidding_items WHERE title=? AND source=?",
-            (item["title"][:80], item["source"]),
+            "SELECT id, phone FROM bidding_items WHERE title=? AND source=?",
+            (title[:80], item.get("source", "")),
         ).fetchone()
         if not exists:
+            detail = {"contact": "", "email": ""}
+            if i < 10 and item.get("url"):
+                detail = extract_detail_phone(item["url"])
+                if not phone:
+                    phone = detail.get("phone", "")
+                if not buyer:
+                    buyer = detail.get("buyer", "")
             conn.execute(
-                "INSERT INTO bidding_items (title, url, source, buyer, phone, matched_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (item["title"][:200], item["url"], item["source"],
-                 item.get("buyer", ""), item.get("phone", ""), time.time()),
+                "INSERT INTO bidding_items (title, url, source, buyer, contact, phone, email, matched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (title[:200], item.get("url", ""), item.get("source", ""),
+                 buyer, detail.get("contact", ""), phone, detail.get("email", ""), time.time()),
             )
             new_count += 1
     conn.commit()
@@ -418,25 +477,24 @@ def log_scan(total_found: int, per_source: list[dict]):
     )
     conn.commit()
 
-
 def get_stats() -> dict:
     conn = get_db()
     total = conn.execute("SELECT COUNT(*) FROM bidding_items").fetchone()[0]
     new_ = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
     recent = conn.execute(
-        "SELECT title, source, buyer, phone, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
+        "SELECT title, source, buyer, contact, phone, email, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
     ).fetchall()
     logs = conn.execute(
         "SELECT scanned_at, total_found, sources FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
     ).fetchall()
     return {
         "total": total, "new": new_, "contacted": contacted,
-        "recent": [{"title": r[0], "source": r[1], "buyer": r[2], "phone": r[3],
-                     "time": r[4], "status": r[5]} for r in recent],
+        "recent": [{"title": r[0], "source": r[1], "buyer": r[2],
+                     "contact": r[3], "phone": r[4], "email": r[5],
+                      "time": r[6], "status": r[7]} for r in recent],
         "logs": [{"time": r[0], "found": r[1], "sources": json.loads(r[2])} for r in logs],
     }
-
 
 def update_status(item_id: int, status: str, notes: str = ""):
     conn = get_db()
