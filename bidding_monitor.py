@@ -1,4 +1,4 @@
-"""BDSS 招标监控引擎 — 多源扫描 + 关键词匹配 + 持久化"""
+"""BDSS 招标监控引擎 v2 — 4 种采集策略覆盖多源招标网站"""
 import json
 import logging
 import re
@@ -6,45 +6,24 @@ import sqlite3
 import time
 import urllib.request
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from xml.etree import ElementTree
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent / "bidding_monitor.db"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "text/html,application/xhtml+xml",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 
-# ============ 数据源配置 ============
 
-SOURCES = [
-    {
-        "id": "okcis",
-        "name": "招标采购导航网",
-        "type": "search",
-        "url_template": "http://www.okcis.cn/search/?q={keyword}&page={page}",
-        "parser": "okcis",
-        "priority": 1,
-    },
-    {
-        "id": "baidumap",
-        "name": "百度地图 POI",
-        "type": "api",
-        "url_template": "https://api.map.baidu.com/place/v2/search?query={keyword}&region={region}&output=json&ak={ak}",
-        "parser": "baidumap",
-        "priority": 2,
-    },
-]
+# ============ 工具函数 ============
 
-# ============ 解析器 ============
-
-def _decode_page(raw: bytes) -> str:
-    """自动检测编码"""
+def _decode(raw: bytes) -> str:
     for enc in ["utf-8", "gbk", "gb2312", "gb18030"]:
         try:
             return raw.decode(enc)
@@ -53,49 +32,325 @@ def _decode_page(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def parse_okcis(html: str) -> list[dict]:
-    """解析招标采购导航网"""
-    items = []
-    for m in re.finditer(r'<a[^>]*href="([^"]+)"[^>]*target="_blank"[^>]*>(.*?)</a>', html, re.DOTALL):
-        title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
-        url = m.group(1)
-        if len(title) > 10 and not title.startswith(("上一页", "下一页", "GO")):
-            if not url.startswith("http"):
-                url = "http://www.okcis.cn" + url
-            items.append({"title": title, "url": url, "source": "招标采购导航网"})
-    # 限前50条
-    return items[:50]
-
-
-def parse_baidumap(html: str) -> list[dict]:
-    """解析百度地图 API 响应"""
-    items = []
+def _get(url: str, timeout: int = 8, headers: dict | None = None) -> str | None:
+    h = {**HEADERS, **(headers or {})}
     try:
-        data = json.loads(html)
-        for poi in data.get("results", []):
-            name = poi.get("name", "")
-            phone = poi.get("telephone", "") or poi.get("phone", "")
-            address = poi.get("address", "")
-            if name:
-                items.append({
-                    "title": f"{name} {'- ' + phone if phone else ''}",
-                    "url": "",
-                    "source": "百度地图POI",
-                    "address": address,
-                    "phone": phone or "",
+        req = urllib.request.Request(url, headers=h)
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return _decode(resp.read())
+    except Exception as e:
+        logger.debug(f"GET failed: {url[:60]} → {e}")
+        return None
+
+
+def _post(url: str, data: dict, timeout: int = 10, headers: dict | None = None) -> str | None:
+    h = {**HEADERS, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", **(headers or {})}
+    try:
+        body = urllib.parse.urlencode(data).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers=h)
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return _decode(resp.read())
+    except Exception as e:
+        logger.debug(f"POST failed: {url[:60]} → {e}")
+        return None
+
+
+def extract_phones(text: str) -> list[str]:
+    phones = set()
+    for m in re.finditer(r"1[3-9]\d{9}", text):
+        phones.add(m.group())
+    for m in re.finditer(r"0\d{2,3}[-]?\d{7,8}", text):
+        phones.add(m.group().replace("-", ""))
+    return sorted(phones)
+
+
+# ============ 采集器 1: ccgp_search (中国政府采购网) ============
+
+def collect_ccgp(keyword: str, max_pages: int = 2) -> list[dict]:
+    """采集中国政府采购网 http://search.ccgp.gov.cn/bxsearch"""
+    results = []
+    for page in range(1, max_pages + 1):
+        params = {
+            "searchtype": "1",
+            "page_index": str(page),
+            "bidSort": "0",
+            "buyerName": "",
+            "projectId": "",
+            "pinMu": "0",
+            "bidType": "0",
+            "dbselect": "bidx",
+            "kw": keyword,
+            "start_time": (datetime.now() - timedelta(days=30)).strftime("%Y:%m:%d"),
+            "end_time": datetime.now().strftime("%Y:%m:%d"),
+            "timeType": "6",
+            "displayZone": "",
+            "zoneId": "",
+            "pppStatus": "0",
+            "agentName": "",
+        }
+        url = "http://search.ccgp.gov.cn/bxsearch?" + urllib.parse.urlencode(params)
+        html = _get(url, timeout=10)
+        if not html:
+            break
+        if "访问过于频繁" in html:
+            logger.warning("CCGP rate limit")
+            break
+        # 解析结果
+        blocks = re.findall(r"<li[^>]*>.*?</li>", html, re.DOTALL)
+        for block in blocks:
+            m = re.search(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', block, re.DOTALL)
+            if not m:
+                continue
+            title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            href = m.group(1)
+            if not href.startswith("http"):
+                href = "http://www.ccgp.gov.cn" + href if href.startswith("/") else href
+            if "bxsearch" in href or "znzxsearch" in href:
+                continue
+            text = re.sub(r"<[^>]+>", " ", block)
+            buyer_m = re.search(r"采购人[：:]\s*([^\n<|]+)", text)
+            results.append({
+                "title": title,
+                "url": href,
+                "source": "中国政府采购网",
+                "buyer": buyer_m.group(1).strip() if buyer_m else "",
+                "phone": "",
+            })
+        if len(blocks) < 5:
+            break  # 无更多数据
+    return results
+
+
+# ============ 采集器 2: ggzy_search (全国公共资源交易平台) ============
+
+def collect_ggzy(keyword: str, max_pages: int = 2) -> list[dict]:
+    """采集全国公共资源交易平台 https://deal.ggzy.gov.cn"""
+    results = []
+    endpoint = "https://deal.ggzy.gov.cn/ds/deal/dealList_find.jsp"
+    since = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+    until = datetime.now().strftime("%Y-%m-%d")
+    business_types = [
+        {"label": "政府采购", "deal_classify": "02", "deal_stage": "0201"},
+        {"label": "工程建设", "deal_classify": "01", "deal_stage": "0101"},
+    ]
+    for biz in business_types:
+        for page in range(1, max_pages + 1):
+            data = {
+                "TIMEBEGIN_SHOW": since,
+                "TIMEEND_SHOW": until,
+                "TIMEBEGIN": since,
+                "TIMEEND": until,
+                "SOURCE_TYPE": "1",
+                "DEAL_TIME": "06",
+                "DEAL_CLASSIFY": biz["deal_classify"],
+                "DEAL_STAGE": biz["deal_stage"],
+                "DEAL_PROVINCE": "0",
+                "DEAL_CITY": "0",
+                "DEAL_PLATFORM": "0",
+                "BID_PLATFORM": "0",
+                "DEAL_TRADE": "0",
+                "isShowAll": "1",
+                "PAGENUMBER": str(page),
+                "FINDTXT": keyword,
+            }
+            html = _post(endpoint, data, timeout=10,
+                         headers={"Referer": "https://www.ggzy.gov.cn/deal/dealList.html",
+                                  "Origin": "https://www.ggzy.gov.cn",
+                                  "X-Requested-With": "XMLHttpRequest"})
+            if not html:
+                continue
+            try:
+                payload = json.loads(html)
+            except json.JSONDecodeError:
+                # 有时返回 HTML 格式错误
+                m = re.search(r"\{.*\}", html, re.DOTALL)
+                if m:
+                    payload = json.loads(m.group(0))
+                else:
+                    break
+            rows = payload.get("data") or []
+            for row in rows:
+                title = row.get("title") or row.get("name", "")
+                url = row.get("url") or row.get("href") or row.get("detailUrl", "")
+                title = re.sub(r"<[^>]+>", "", title).strip()
+                results.append({
+                    "title": title,
+                    "url": url if url.startswith("http") else "https://www.ggzy.gov.cn" + url if url.startswith("/") else url,
+                    "source": f"全国公共资源平台/{biz['label']}",
+                    "buyer": row.get("buyer", "") or row.get("purchaser", "") or "",
+                    "phone": "",
                 })
-    except Exception:
-        pass
-    return items[:20]
+            if not rows:
+                break
+    return results
 
 
-PARSERS = {
-    "okcis": parse_okcis,
-    "baidumap": parse_baidumap,
-}
+# ============ 采集器 3: rss_search (Bing RSS 搜索) ============
+
+def collect_rss(keyword: str, allowed_domains: list[str] | None = None) -> list[dict]:
+    """通过 Bing RSS 搜索招标信息"""
+    results = []
+    query_templates = [
+        '"{keyword}" 招标',
+        '"{keyword}" 采购',
+        '"{keyword}" 投标',
+    ]
+    seen_urls = set()
+    for qt in query_templates:
+        query = qt.format(keyword=keyword)
+        feed_url = f"https://www.bing.com/search?format=rss&q={urllib.parse.quote(query)}"
+        xml_text = _get(feed_url, timeout=8)
+        if not xml_text:
+            continue
+        try:
+            root = ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError:
+            continue
+        for item in root.findall(".//item"):
+            title_el = item.find("title")
+            link_el = item.find("link")
+            desc_el = item.find("description")
+            if title_el is None or link_el is None or title_el.text is None or link_el.text is None:
+                continue
+            title = title_el.text.strip()
+            url = link_el.text.strip()
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            # 域名过滤
+            if allowed_domains:
+                from urllib.parse import urlparse
+                host = urlparse(url).netloc.lower()
+                if not any(host == d.lower() or host.endswith("." + d.lower()) for d in allowed_domains):
+                    continue
+            desc = re.sub(r"<[^>]+>", "", (desc_el.text or "")).strip()[:200] if desc_el else ""
+            phones = extract_phones(desc + title)
+            results.append({
+                "title": title,
+                "url": url,
+                "source": "Bing搜索",
+                "buyer": "",
+                "phone": " | ".join(phones[:3]),
+            })
+    return results[:30]
 
 
-# ============ 数据库 ============
+# ============ 采集器 4: html_list (定点抓取列表页) ============
+
+def collect_html_list(url: str, source_name: str = "招标列表",
+                      link_min_len: int = 8,
+                      max_items: int = 30) -> list[dict]:
+    """采集指定 HTML 列表页的链接"""
+    results = []
+    html = _get(url, timeout=10)
+    if not html:
+        return results
+    for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.DOTALL):
+        title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        href = m.group(1)
+        if len(title) < link_min_len:
+            continue
+        if not href.startswith("http"):
+            continue
+        phones = extract_phones(title)
+        results.append({
+            "title": title,
+            "url": href,
+            "source": source_name,
+            "buyer": "",
+            "phone": " | ".join(phones[:3]),
+        })
+    return results[:max_items]
+
+
+# ============ 批量扫描 ============
+
+# 行业关键词 — 水处理药剂
+WATER_CHEM_KEYWORDS = [
+    "水处理药剂", "阻垢剂", "杀菌剂", "缓蚀剂", "絮凝剂",
+    "循环水处理", "反渗透药剂", "脱盐水药剂",
+    "电厂药剂", "污水处理药剂", "冷却水处理",
+]
+
+# 招标网站配置
+BIDDING_SOURCES = [
+    # --- 核心政府采购 ---
+    {"name": "中国政府采购网", "type": "ccgp", "keywords": WATER_CHEM_KEYWORDS, "max_pages": 2},
+    # --- 全国公共资源交易 ---
+    {"name": "全国公共资源交易平台", "type": "ggzy", "keywords": WATER_CHEM_KEYWORDS[:5], "max_pages": 1},
+    # --- Bing RSS 搜索（覆盖全网招标站点） ---
+    {"name": "Bing搜索(招标)", "type": "rss", "keywords": WATER_CHEM_KEYWORDS[:5],
+     "allowed_domains": [
+         "ccgp.gov.cn", "cebpubservice.com", "chinabidding.com.cn",
+         "bidcenter.com.cn", "okcis.cn", "qianlima.com",
+         "ggzy.gov.cn", "gp.gov.cn", "zfcg.com",
+         "xxx.gov.cn", "xxx.cn",
+     ]},
+    # --- 招标采购导航网 ---
+    {"name": "招标采购导航网", "type": "html",
+     "url": "http://www.okcis.cn/search/?q={keyword}&page=1",
+     "keywords": WATER_CHEM_KEYWORDS[:3], "max_pages": 1,
+     "title_include": ["招标", "采购", "公告", "项目", "中标"],
+     "title_exclude": ["Group", "业务办公室", "搜企网", "首页", "登录"]},
+]
+
+
+def scan_all_sources() -> dict:
+    """扫描所有配置的招标源"""
+    all_items = []
+    per_source = []
+
+    # 去重缓存
+    title_seen = set()
+
+    for src in BIDDING_SOURCES:
+        source_name = src["name"]
+        stype = src["type"]
+        keywords = src.get("keywords", WATER_CHEM_KEYWORDS)
+        max_pages = src.get("max_pages", 1)
+
+        items = []
+        try:
+            if stype == "ccgp":
+                for kw in keywords[:2]:
+                    items.extend(collect_ccgp(kw, max_pages))
+            elif stype == "rss":
+                for kw in keywords[:2]:
+                    items.extend(collect_rss(kw, src.get("allowed_domains")))
+            elif stype == "html":
+                url_template = src.get("url", "")
+                title_include = src.get("title_include", [])
+                title_exclude = src.get("title_exclude", [])
+                for kw in keywords[:1]:
+                    url = url_template.replace("{keyword}", urllib.parse.quote(kw))
+                    raw_items = collect_html_list(url, source_name)
+                    for item in raw_items:
+                        t = item["title"]
+                        if title_include and not any(k in t for k in title_include):
+                            continue
+                        if title_exclude and any(k in t for k in title_exclude):
+                            continue
+                        items.append(item)
+
+        except Exception as e:
+            logger.error(f"Source failed: {source_name}: {e}")
+
+        # 去重
+        seen = set()
+        deduped = []
+        for item in items:
+            key = item["title"][:60]
+            if key not in seen:
+                seen.add(key)
+                deduped.append(item)
+        items = deduped
+
+        all_items.extend(items)
+        per_source.append({"source": source_name, "found": len(items)})
+        logger.info(f"  {source_name}: {len(items)} 条")
+
+    return {"items": all_items, "per_source": per_source, "total": len(all_items)}
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
@@ -105,7 +360,7 @@ def get_db() -> sqlite3.Connection:
             title TEXT NOT NULL,
             url TEXT DEFAULT '',
             source TEXT DEFAULT '',
-            keywords TEXT DEFAULT '',
+            buyer TEXT DEFAULT '',
             phone TEXT DEFAULT '',
             matched_at REAL NOT NULL,
             status TEXT DEFAULT 'new',
@@ -115,65 +370,59 @@ def get_db() -> sqlite3.Connection:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS monitor_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_id TEXT NOT NULL,
             scanned_at REAL NOT NULL,
-            items_found INTEGER DEFAULT 0,
-            new_items INTEGER DEFAULT 0,
-            error TEXT DEFAULT ''
+            total_found INTEGER DEFAULT 0,
+            sources TEXT DEFAULT '[]'
         )
     """)
     conn.commit()
     return conn
 
-
-def save_items(items: list[dict], keywords: str, source_id: str) -> int:
-    """保存新条目到数据库，返回新增数"""
+def save_items(items: list[dict]) -> int:
+    """保存条目，返回新增数"""
     conn = get_db()
     new_count = 0
     for item in items:
-        title = item.get("title", "")
-        phone = item.get("phone", "")
         exists = conn.execute(
             "SELECT id FROM bidding_items WHERE title=? AND source=?",
-            (title[:80], item.get("source", "")),
+            (item["title"][:80], item["source"]),
         ).fetchone()
         if not exists:
             conn.execute(
-                "INSERT INTO bidding_items (title, url, source, keywords, phone, matched_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (title[:200], item.get("url", ""), item.get("source", ""), keywords, phone, time.time()),
+                "INSERT INTO bidding_items (title, url, source, buyer, phone, matched_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (item["title"][:200], item["url"], item["source"],
+                 item.get("buyer", ""), item.get("phone", ""), time.time()),
             )
             new_count += 1
     conn.commit()
     return new_count
 
 
-def log_scan(source_id: str, items_found: int, new_items: int, error: str = ""):
+def log_scan(total_found: int, per_source: list[dict]):
     conn = get_db()
     conn.execute(
-        "INSERT INTO monitor_log (source_id, scanned_at, items_found, new_items, error) VALUES (?, ?, ?, ?, ?)",
-        (source_id, time.time(), items_found, new_items, error),
+        "INSERT INTO monitor_log (scanned_at, total_found, sources) VALUES (?, ?, ?)",
+        (time.time(), total_found, json.dumps(per_source, ensure_ascii=False)),
     )
     conn.commit()
 
 
 def get_stats() -> dict:
-    """获取监控统计数据"""
     conn = get_db()
     total = conn.execute("SELECT COUNT(*) FROM bidding_items").fetchone()[0]
-    new = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
+    new_ = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='new'").fetchone()[0]
     contacted = conn.execute("SELECT COUNT(*) FROM bidding_items WHERE status='contacted'").fetchone()[0]
     recent = conn.execute(
-        "SELECT title, source, matched_at, status, phone FROM bidding_items ORDER BY matched_at DESC LIMIT 20"
+        "SELECT title, source, buyer, phone, matched_at, status FROM bidding_items ORDER BY matched_at DESC LIMIT 30"
     ).fetchall()
     logs = conn.execute(
-        "SELECT source_id, scanned_at, items_found, new_items FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
+        "SELECT scanned_at, total_found, sources FROM monitor_log ORDER BY scanned_at DESC LIMIT 10"
     ).fetchall()
     return {
-        "total": total,
-        "new": new,
-        "contacted": contacted,
-        "recent": [{"title": r[0], "source": r[1], "time": r[2], "status": r[3], "phone": r[4]} for r in recent],
-        "logs": [{"source": r[0], "time": r[1], "found": r[2], "new": r[3]} for r in logs],
+        "total": total, "new": new_, "contacted": contacted,
+        "recent": [{"title": r[0], "source": r[1], "buyer": r[2], "phone": r[3],
+                     "time": r[4], "status": r[5]} for r in recent],
+        "logs": [{"time": r[0], "found": r[1], "sources": json.loads(r[2])} for r in logs],
     }
 
 
@@ -183,54 +432,15 @@ def update_status(item_id: int, status: str, notes: str = ""):
     conn.commit()
 
 
-# ============ 扫描引擎 ============
+# ============ 主入口 ============
 
-def scan_keyword(keyword: str, ak: str = "") -> dict:
-    """扫描所有数据源，返回新增条目数"""
-    total_new = 0
-    results = []
-
-    for src in SOURCES:
-        source_id = src["id"]
-        parser = PARSERS.get(src["parser"])
-        if not parser:
-            continue
-
-        try:
-            region = urllib.parse.quote("全国")
-            url = src["url_template"].format(
-                keyword=urllib.parse.quote(keyword),
-                ak=ak,
-                region=region,
-                page=1,
-            )
-            req = urllib.request.Request(url, headers=HEADERS)
-            resp = urllib.request.urlopen(req, timeout=6)
-            raw = resp.read()
-            html = _decode_page(raw)
-
-            items = parser(html)
-            items_found = len(items)
-            new_items = save_items(items, keyword, source_id)
-            log_scan(source_id, items_found, new_items)
-            total_new += new_items
-            results.append({"source": src["name"], "found": items_found, "new": new_items})
-
-        except Exception as e:
-            log_scan(source_id, 0, 0, str(e)[:100])
-            results.append({"source": src["name"], "found": 0, "new": 0, "error": str(e)[:50]})
-
-        time.sleep(1)
-
-    return {"total_new": total_new, "results": results}
-
-
-def scan_keywords(keywords: list[str], ak: str = "") -> dict:
-    """扫描多个关键词"""
-    total = 0
-    per_keyword = []
-    for kw in keywords:
-        r = scan_keyword(kw, ak)
-        per_keyword.append({"keyword": kw, "new": r["total_new"]})
-        total += r["total_new"]
-    return {"total_new": total, "per_keyword": per_keyword}
+def scan() -> dict:
+    """执行一次完整扫描"""
+    result = scan_all_sources()
+    new_count = save_items(result["items"])
+    log_scan(result["total"], result["per_source"])
+    return {
+        "total_found": result["total"],
+        "new_saved": new_count,
+        "per_source": result["per_source"],
+    }
