@@ -1,4 +1,4 @@
-"""轻量搜索模块 — 不走浏览器，直接 HTTP 请求"""
+"""轻量搜索模块 — 公司电话一站式搜索"""
 import json
 import logging
 import os
@@ -8,97 +8,9 @@ import urllib.parse
 from pathlib import Path
 from typing import Optional
 
+from skills.engines import search_bing, search_baidu, fetch_page_text
+
 logger = logging.getLogger(__name__)
-
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-
-
-def search_bing(query: str, max_results: int = 5) -> list[dict]:
-    """通过 HTTP 请求搜必应（不需要浏览器）"""
-    url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&count={max_results}"
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        resp = urllib.request.urlopen(req, timeout=15)
-        html = resp.read().decode("utf-8", errors="replace")
-    except Exception as e:
-        logger.warning(f"Bing 搜索失败: {e}")
-        return []
-
-    results = []
-    # 提取搜索结果：<li class="b_algo"> 中的 h2 > a
-    for m in re.finditer(r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>.*?<h2>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
-        url = m.group(1)
-        title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
-        if title and url and len(results) < max_results:
-            results.append({"title": title, "url": url, "snippet": "", "index": len(results) + 1})
-    return results
-
-
-def search_baidu(query: str, max_results: int = 5) -> list[dict]:
-    """通过 HTTP 请求搜百度"""
-    url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}&ie=utf-8"
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        resp = urllib.request.urlopen(req, timeout=15)
-        html = resp.read().decode("utf-8", errors="replace")
-    except Exception as e:
-        logger.warning(f"百度搜索失败: {e}")
-        return []
-
-    results = []
-    # 百度PC版搜索结果在 h3 > a 中
-    for m in re.finditer(r'<h3[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL):
-        url = m.group(1)
-        title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
-        if title and not url.startswith("http"):
-            # 百度结果链接需要处理
-            if "baidu.com/link" in url:
-                # 提取真实 URL
-                url_param = re.search(r"url=([^&]+)", url)
-                if url_param:
-                    try:
-                        url = urllib.parse.unquote(url_param.group(1))
-                    except Exception as _ex:
-                        logger.debug(f"忽略: {_ex}")
-        if title and url and len(results) < max_results:
-            results.append({"title": title, "url": url, "snippet": "", "index": len(results) + 1})
-
-    return results
-
-
-def fetch_page_text(url: str, timeout: int = 15) -> str:
-    """获取页面纯文本"""
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        html = resp.read().decode("utf-8", errors="replace")
-        text = re.sub(r"<[^>]+>", " ", html)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:10000]
-    except Exception:
-        return ""
-
-
-def search_and_open(query: str, engine: str = "baidu", max_results: int = 3) -> tuple[list, str]:
-    """搜索并打开结果页面，返回 (opened_pages, search_page_text)"""
-    if engine == "bing":
-        results = search_bing(query, max_results)
-    else:
-        results = search_baidu(query, max_results)
-
-    opened = []
-    search_text = ""
-
-    for r in results:
-        page_text = fetch_page_text(r["url"])
-        opened.append({**r, "page_text": page_text})
-        if not search_text:
-            search_text = page_text[:5000]
-
-    return opened, search_text
-
-
-PHONE_EXTRACTOR = None
 
 def extract_phones_from_text(text: str) -> list[str]:
     """从文本中提取中国电话号码（委托 PhoneExtractor）"""
