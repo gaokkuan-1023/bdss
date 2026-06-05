@@ -1,0 +1,87 @@
+# BDSS 招标监控行业模板配置
+# 用法: python bidding_monitor.py --industry 水处理药剂
+
+profiles:
+  水处理药剂:
+    name: "水处理药剂行业"
+    keywords:
+      - "水处理药剂"
+      - "阻垢剂"
+      - "杀菌剂"
+      - "缓蚀剂"
+      - "絮凝剂"
+      - "循环水处理"
+      - "反渗透药剂"
+      - "电厂药剂"
+      - "污水处理药剂"
+      - "锅炉水处理"
+    regions:
+      - "全国"
+    budget_min: 0
+    sources:
+      - ccgp
+      - ggzy
+      - rss
+    title_include:
+      - "招标"
+      - "采购"
+      - "公告"
+      - "项目"
+      - "中标"
+    title_exclude:
+      - "首页"
+      - "登录"
+      - "注册"
+
+  电力设备:
+    name: "电力设备行业"
+    keywords:
+      - "电力设备"
+      - "变压器"
+      - "开关柜"
+      - "配电柜"
+      - "电缆"
+      - "高压设备"
+      - "电力工程"
+      - "变电站"
+    regions:
+      - "全国"
+    budget_min: 500000
+    sources:
+      - ccgp
+      - ggzy
+      - rss
+    title_include:
+      - "招标"
+      - "采购"
+      - "中标"
+    title_exclude:
+      - "首页"
+      - "登录"
+
+  IT服务:
+    name: "IT服务行业"
+    keywords:
+      - "信息系统"
+      - "软件开发"
+      - "IT运维"
+      - "数据中心"
+      - "网络安全"
+      - "云计算"
+      - "智慧"
+      - "数字化转型"
+    regions:
+      - "全国"
+    budget_min: 200000
+    sources:
+      - ccgp
+      - ggzy
+      - rss
+    title_include:
+      - "招标"
+      - "采购"
+      - "公告"
+    title_exclude:
+      - "首页"
+      - "登录"
+      - "注册"

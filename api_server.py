@@ -12,6 +12,7 @@ BDSS HTTP API 服务 + Web 界面
 """
 
 import argparse
+import hmac
 import json
 import logging
 import os
@@ -152,7 +153,7 @@ def _check_auth():
     auth_header = request.headers.get("Authorization", "")
     # 支持 "Bearer xxx" 和直接 "xxx" 两种格式
     provided = auth_header.replace("Bearer ", "").strip()
-    if provided != token:
+    if not hmac.compare_digest(provided, token):
         abort(401, description="无效的 API Token，请在 Header 中传递 Authorization: Bearer <token>")
 
 
@@ -183,7 +184,7 @@ def health():
 def api_search():
     _check_auth()
     body = request.get_json(silent=True)
-    if not body:
+    if body is None:
         return _build_response(False, error="请求体必须是 JSON", status=400)
 
     company = body.get("company", "").strip()
@@ -231,7 +232,7 @@ def api_search():
 def api_search_batch():
     _check_auth()
     body = request.get_json(silent=True)
-    if not body:
+    if body is None:
         return _build_response(False, error="请求体必须是 JSON", status=400)
     companies = body.get("companies", [])
     if not companies or not isinstance(companies, list):
@@ -269,8 +270,9 @@ def api_search_batch():
 def main():
     parser = argparse.ArgumentParser(description="BDSS HTTP API 服务")
     parser.add_argument("--port", "-p", type=int, default=5000, help="监听端口 (默认: 5000)")
-    parser.add_argument("--host", default="0.0.0.0", help="监听地址 (默认: 0.0.0.0)")
+    parser.add_argument("--host", default="127.0.0.1", help="监听地址 (默认: 127.0.0.1)")
     parser.add_argument("--verbose", "-v", action="store_true", help="DEBUG 级别日志")
+    parser.add_argument("--debug", action="store_true", help="启用 Flask 调试模式（仅限开发环境）")
     parser.add_argument("--visible", action="store_true", help="显示浏览器窗口")
     parser.add_argument("--proxy", help="代理地址")
     parser.add_argument("--token", help="API Token（设置后需在请求 Header 传递）")
@@ -294,7 +296,7 @@ def main():
     if CONFIG["token"]:
         logger.info(f"  🔐 Token 认证已开启")
     logger.info(f"{'='*50}")
-    app.run(host=args.host, port=args.port, debug=args.verbose)
+    app.run(host=args.host, port=args.port, debug=args.debug)
 
 
 if __name__ == "__main__":

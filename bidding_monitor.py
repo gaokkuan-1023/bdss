@@ -2,6 +2,7 @@
 from typing import Optional, List
 import logging
 import json
+import os
 import re
 import sqlite3
 import time
@@ -353,8 +354,8 @@ def ai_analyze_bidding(title: str, buyer: str = "") -> dict:
 
 CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
 
-
-CCGP_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂", "循环水处理", "电厂药剂"]
+# 招标采购导航网关键词
+OKCIS_KEYWORDS = ["水处理药剂", "阻垢剂", "杀菌剂"]
 
 # 招标网站配置
 BIDDING_SOURCES = [

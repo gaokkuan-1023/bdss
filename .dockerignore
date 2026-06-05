@@ -10,3 +10,6 @@ venv
 LICENSE
 README.md
 .DS_Store
+*.db
+docs/
+.atomcode/

@@ -63,6 +63,8 @@ def fetch_page_text(url: str, timeout: int = 15) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
         resp = urllib.request.urlopen(req, timeout=timeout)
+        if resp.status != 200:
+            return ""
         html = resp.read().decode("utf-8", errors="replace")
         text = re.sub(r"<[^>]+>", " ", html)
         return re.sub(r"\s+", " ", text).strip()[:10000]

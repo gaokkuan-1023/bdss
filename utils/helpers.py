@@ -155,3 +155,133 @@ def export_csv(company: str, phones: list[str], sources: list[dict], output_path
             else:
                 writer.writerow([phone, '', '', '', ''])
     return str(path)
+
+
+# ===== 批量搜索 Excel 增强导出 =====
+
+_CONFIDENCE_LEVELS = {
+    "招标数据库": "高",
+    "百度地图POI": "高",
+    "百度地图官方API": "高",
+    "企查查": "高",
+    "天眼查": "高",
+    "顺企网": "中",
+    "AI搜索": "中",
+}
+
+
+def _get_confidence(source: str) -> str:
+    """根据来源名称判断可信度"""
+    for prefix, level in _CONFIDENCE_LEVELS.items():
+        if source.startswith(prefix):
+            return level
+    return "低"
+
+
+def export_batch_excel(companies_results: list[dict], output_path: str) -> str:
+    """
+    批量搜索 Excel 增强导出 — 三工作表输出。
+
+    companies_results: [{"company": "xxx", "phones": [...], "sources": [...], ...}, ...]
+    工作表1: 搜索结果（公司名/电话/类型/来源/可信度）
+    工作表2: 统计汇总（成功率/平均电话数/各引擎统计）
+    工作表3: 未找到（未搜到电话的公司列表）
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+
+    # ===== Sheet 1: 搜索结果 =====
+    ws1 = wb.active
+    ws1.title = "搜索结果"
+    headers1 = ["公司名称", "电话", "类型", "来源", "可信度"]
+    ws1.append(headers1)
+    for cell in ws1[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    ws1.auto_filter.ref = "A1:E1"
+
+    for cr in companies_results:
+        company = cr.get("company", "")
+        phones = cr.get("phones", [])
+        sources = cr.get("sources", [])
+        if not phones:
+            ws1.append([company, "（未找到）", "", "", ""])
+            continue
+        for phone in phones:
+            # 找匹配的来源
+            matched = [s for s in sources if s.get("phone") == phone]
+            if matched:
+                for s in matched:
+                    src_name = s.get("source", "")
+                    ws1.append([
+                        company, phone, _classify_phone(phone),
+                        src_name, _get_confidence(src_name),
+                    ])
+            else:
+                ws1.append([company, phone, _classify_phone(phone), "", ""])
+
+    ws1.column_dimensions['A'].width = 30
+    ws1.column_dimensions['B'].width = 20
+    ws1.column_dimensions['C'].width = 10
+    ws1.column_dimensions['D'].width = 30
+    ws1.column_dimensions['E'].width = 10
+
+    # ===== Sheet 2: 统计汇总 =====
+    ws2 = wb.create_sheet("统计汇总")
+    ws2.append(["指标", "数值"])
+    for cell in ws2[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+
+    total = len(companies_results)
+    found = sum(1 for cr in companies_results if cr.get("phones"))
+    not_found = total - found
+    all_phones = [p for cr in companies_results for p in cr.get("phones", [])]
+    avg_phones = len(all_phones) / total if total > 0 else 0
+    success_rate = (found / total * 100) if total > 0 else 0
+
+    ws2.append(["搜索公司总数", total])
+    ws2.append(["找到电话", found])
+    ws2.append(["未找到电话", not_found])
+    ws2.append(["成功率", f"{success_rate:.1f}%"])
+    ws2.append(["电话总数", len(all_phones)])
+    ws2.append(["平均电话数", f"{avg_phones:.1f}"])
+
+    # 按来源统计
+    source_counts = {}
+    for cr in companies_results:
+        for s in cr.get("sources", []):
+            src = s.get("source", "未知").split("/")[0]
+            source_counts[src] = source_counts.get(src, 0) + 1
+    if source_counts:
+        ws2.append([])
+        ws2.append(["来源分布", "数量"])
+        for src, cnt in sorted(source_counts.items(), key=lambda x: -x[1]):
+            ws2.append([src, cnt])
+
+    ws2.column_dimensions['A'].width = 20
+    ws2.column_dimensions['B'].width = 15
+
+    # ===== Sheet 3: 未找到 =====
+    ws3 = wb.create_sheet("未找到")
+    ws3.append(["公司名称", "备注"])
+    for cell in ws3[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    for cr in companies_results:
+        if not cr.get("phones"):
+            ws3.append([cr.get("company", ""), "未找到任何电话"])
+
+    ws3.column_dimensions['A'].width = 30
+    ws3.column_dimensions['B'].width = 20
+
+    # 保存
+    path = Path(output_path)
+    if path.is_dir() or path.suffix == '':
+        path = path / "batch_results.xlsx"
+    wb.save(str(path))
+    return str(path)
