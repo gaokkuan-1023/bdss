@@ -29,7 +29,7 @@ except ImportError:
     sys.exit(1)
 
 from utils.helpers import setup_logger
-from main import search_company, search_all_engines
+from services.search import search_company, search_all_engines
 
 logger = logging.getLogger(__name__)
 

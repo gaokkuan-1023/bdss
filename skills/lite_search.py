@@ -1,37 +1,55 @@
-"""轻量搜索模块 — 公司电话一站式搜索"""
-import json
-import logging
-import os
-import re
-import urllib.request
-import urllib.parse
-from pathlib import Path
-from typing import Optional
+"""轻量搜索模块 — 公司电话一站式搜索（采集器编排层）
 
-from skills.engines import search_bing, search_baidu, fetch_page_text
+search_company_phones() 按优先级依次调用各采集器，合并去重后返回结果。
+各采集器位于 collectors/ 目录，互相独立，可单独替换或禁用。
+"""
+import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-PHONE_EXTRACTOR = None
+# ===== 向后兼容的工具函数 =====
+
+_PHONE_EXTRACTOR = None
+
 
 def extract_phones_from_text(text: str) -> list[str]:
     """从文本中提取中国电话号码（委托 PhoneExtractor）"""
-    global PHONE_EXTRACTOR
-    if PHONE_EXTRACTOR is None:
+    global _PHONE_EXTRACTOR
+    if _PHONE_EXTRACTOR is None:
         from extractors.phone import PhoneExtractor
-        PHONE_EXTRACTOR = PhoneExtractor(prefer_nearby=False)
-    return PHONE_EXTRACTOR.extract(text)
+        _PHONE_EXTRACTOR = PhoneExtractor(prefer_nearby=False)
+    return _PHONE_EXTRACTOR.extract(text)
 
 
-SEARCH_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml",
-    "Accept-Language": "zh-CN,zh;q=0.9",
-}
+def search_baidumap_poi(company: str) -> list[dict]:
+    """通过百度地图 Place API 搜索公司 POI 及电话（向后兼容接口）"""
+    from collectors.baidu_poi import BaiduPOICollector
+    collector = BaiduPOICollector()
+    result = collector.collect(company)
+    # 转换为旧格式的 list[dict]
+    pois = []
+    for src in result.get("sources", []):
+        pois.append({
+            "name": src.get("title", company),
+            "address": "",
+            "phone": src.get("phone", ""),
+            "uid": "",
+        })
+    return pois
 
 
 def search_bidding(keyword: str, max_pages: int = 1) -> dict:
-    """从招标采购导航网搜招标公告，提取电话"""
+    """从招标采购导航网搜招标公告，提取电话（独立工具函数）"""
+    import re
+    import urllib.request
+    import urllib.parse
+
+    SEARCH_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
     all_phones = set()
     items = []
     for page in range(1, max_pages + 1):
@@ -46,192 +64,75 @@ def search_bidding(keyword: str, max_pages: int = 1) -> dict:
                 items.append({"title": m.group(2).strip(), "url": m.group(1)})
         except Exception as _ex:
             logger.debug(f"忽略: {_ex}")
-    return {"phones": sorted(all_phones), "phone_count": len(all_phones), "items": items[:10], "source": "招标采购导航网"}
+    return {"phones": sorted(all_phones), "phone_count": len(all_phones),
+            "items": items[:10], "source": "招标采购导航网"}
 
 
-def search_baidumap_poi(company: str) -> list[dict]:
-    from utils.env import get_ak
-    """通过百度地图 Place API 搜索公司 POI 及电话"""
-    ak = os.environ.get("BAIDU_MAP_AK", "")
-    if not ak:
-        from utils.env import get_ak
-        ak = get_ak()
-    if not ak:
-        logger.warning("未配置 BAIDU_MAP_AK，跳过百度地图查询")
-        return []
-    query = urllib.parse.quote(company)
-    region = urllib.parse.quote("全国")
-    url = f"https://api.map.baidu.com/place/v2/search?query={query}&region={region}&output=json&ak={ak}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = urllib.request.urlopen(req, timeout=10)
-        data = json.loads(resp.read().decode("utf-8"))
-        results = []
-        for poi in data.get("results", []):
-            phone = poi.get("telephone", "") or poi.get("phone", "")
-            results.append({
-                "name": poi.get("name", ""),
-                "address": poi.get("address", ""),
-                "phone": phone,
-                "uid": poi.get("uid", ""),
-            })
-        return results
-    except Exception as e:
-        logger.warning(f"百度地图 API 查询失败: {e}")
-        return []
-
+# ===== 核心编排函数 =====
 
 def search_company_phones(company: str, log_detail: bool = False) -> dict:
-    """一站式搜索公司电话：百度地图 POI + 顺企网，返回电话和步骤日志"""
-    all_phones = set()
-    sources = []
-    steps = [] if log_detail else None
+    """
+    一站式搜索公司电话 — 采集器编排入口。
 
-    def _log(msg):
+    按优先级依次调用各采集器：
+      0/5  招标数据库（缓存线索）
+      1/5  百度地图 POI（含缩短名称重试）
+      2/5  顺企网
+      3/5  网页搜索（Bing / 百度）
+      4/5  AI 搜索验证（始终执行）
+
+    采集到电话后跳过后续步骤（AI验证除外，始终执行）。
+    返回: {"phones": [...], "phone_count": N, "sources": [...], "steps": [...]}
+    """
+    from collectors import COLLECTORS
+
+    all_phones: set = set()
+    all_sources: list = []
+    steps: list = [] if log_detail else None
+
+    def _log(msg: str):
         if steps is not None:
             steps.append(msg)
 
-    # 招标数据库查缓存（已有的线索中可能已有电话）
-    _log(f"0/5 招标数据库查询: {company}")
-    try:
-        from bidding_monitor import get_db, close_db
-        _conn = get_db()
-        _rows = _conn.execute(
-            "SELECT phone FROM bidding_items WHERE (buyer LIKE ? OR title LIKE ?) AND phone != '' ORDER BY matched_at DESC LIMIT 5",
-            (f"%{company}%", f"%{company}%"),
-        ).fetchall()
-        if _rows:
-            for _r in _rows:
-                for p in extract_phones_from_text(_r[0]):
-                    all_phones.add(p)
-                    sources.append({"phone": p, "source": "招标数据库", "title": ""})
-            _log(f"  ✓ 招标数据库找到电话: {' | '.join(all_phones)}")
-        else:
-            _log(f"  - 招标数据库未找到")
-    except Exception:
-        _log(f"  - 招标数据库查询跳过")
+    total = len(COLLECTORS)
 
-    # 1. 百度地图 POI（最准）
-    _log(f"1/5 百度地图POI查询: {company}")
-    pois = search_baidumap_poi(company)
-    for poi in pois:
-        if poi["phone"]:
-            for p in extract_phones_from_text(poi["phone"]):
-                if p not in all_phones:
-                    all_phones.add(p)
-                    sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
-    if all_phones:
-        _log(f"  ✓ 百度地图POI找到电话: {' | '.join(all_phones)}")
-    else:
-        _log(f"  ✗ 百度地图POI未找到电话")
+    for idx, collector_cls in enumerate(COLLECTORS):
+        collector = collector_cls()
+        name = collector.name
 
-    # 2. 缩短公司名再搜
-    if not all_phones:
-        short_name = company.replace("有限公司", "").replace("股份有限公司", "").replace("集团", "").replace("(", "").replace(")", "").replace("（", "").replace("）", "")
-        if short_name != company:
-            _log(f"2/5 缩短名称查询: {short_name}")
-            pois = search_baidumap_poi(short_name)
-            for poi in pois:
-                if poi["phone"]:
-                    for p in extract_phones_from_text(poi["phone"]):
-                        if p not in all_phones:
-                            all_phones.add(p)
-                            sources.append({"phone": p, "source": f"百度地图POI/{poi['name']}", "title": poi["name"]})
-            if all_phones:
-                _log(f"  ✓ 缩短名称找到电话: {' | '.join(all_phones)}")
-            else:
-                _log(f"  ✗ 缩短名称也未找到电话")
-        else:
-            _log(f"2/5 公司名无需缩短，跳过")
+        _log(f"{idx}/{total - 1} {name}: {company}")
 
-    # 3. 顺企网补充
-    if not all_phones:
-        _log("3/5 顺企网查询中...")
         try:
-            key = urllib.parse.quote(company[:6])
-            url = f"https://www.11467.com/company/search.php?key={key}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            resp = urllib.request.urlopen(req, timeout=8)
-            html = resp.read().decode("utf-8", errors="replace")
-            for p in extract_phones_from_text(html):
-                if p not in all_phones:
-                    all_phones.add(p)
-                    sources.append({"phone": p, "source": "顺企网", "title": ""})
-            if all_phones:
-                _log(f"  ✓ 顺企网找到电话: {' | '.join(all_phones)}")
-            else:
-                _log(f"  ✗ 顺企网未找到电话")
-        except Exception as _ex:
-            _log(f"  ✗ 顺企网查询失败: {str(_ex)[:40]}")
-            logger.debug(f"顺企网查询失败: {_ex}")
+            result = collector.collect(company, existing_phones=all_phones)
+        except Exception as e:
+            _log(f"  ✗ {name} 异常: {str(e)[:60]}")
+            logger.debug(f"{name} collector 异常: {e}")
+            continue
 
+        new_phones = result.get("phones", set())
+        new_sources = result.get("sources", [])
+        log_msg = result.get("log", "")
 
-    # 4. 网页搜索
-    if not all_phones:
-        queries = [f"{company} 联系电话", f"{company} 电话", f"{company} 联系方式"]
-        for q in queries[:1]:
-            _log(f"4/5 搜索: \"{q}\"")
-            try:
-                results = search_bing(q, max_results=3)
-                if not results:
-                    results = search_baidu(q, max_results=3)
-                if not results:
-                    _log(f"  ✗ 搜索引擎无结果")
-                    continue
-                for r in results:
-                    page_text = fetch_page_text(r["url"])
-                    text = r.get("snippet", "") + " " + page_text
-                    for p in extract_phones_from_text(text):
-                        if p not in all_phones:
-                            all_phones.add(p)
-                            sources.append({"phone": p, "source": r["url"][:50], "title": r["title"][:40]})
-                    if all_phones:
-                        break
-                if all_phones:
-                    _log(f"  ✓ 搜索找到电话: {' | '.join(all_phones)}")
-                else:
-                    _log(f"  ✗ 搜索未找到电话")
-            except Exception as ex:
-                _log(f"  ✗ 搜索异常: {str(ex)[:40]}")
+        if new_phones:
+            before = len(all_phones)
+            all_phones.update(new_phones)
+            all_sources.extend(new_sources)
+            added = len(all_phones) - before
+            _log(f"  ✓ {name} 新增 {added} 个电话: {' | '.join(sorted(new_phones))}")
+        else:
+            _log(f"  ✗ {name} 未找到电话" + (f" — {log_msg}" if log_msg else ""))
+            if new_sources:
+                all_sources.extend(new_sources)
 
-    # 5. AI 搜索验证（无论前面是否找到都执行）
-    _log(f"5/5 AI搜索: {company}")
-    try:
-        from skills.ai import AISearch
-        ai = AISearch()
-        results = ai.search(company, max_results=3)
-        for r in results:
-            snip = r.get("snippet", "")
-            if snip:
-                for p in extract_phones_from_text(snip):
-                    if p not in all_phones:
-                        sources.append({"phone": p, "source": "AI搜索", "title": r.get("title", "")})
-        if all_phones:
-            _log("  ok AI找到: " + " | ".join(all_phones))
-        if not all_phones:
-            _log(f"  ✗ AI搜索未找到电话")
-    except Exception as _ex:
-        _log(f"  ✗ AI搜索失败: {str(_ex)[:40]}")
-    # 标记来源可信度
-    confidence_map = {
-        "招标数据库": "high",
-        "百度地图POI": "high",
-        "顺企网": "medium",
-        "AI搜索": "medium",
-    }
-    for s in sources:
-        matched = False
-        for prefix, level in confidence_map.items():
-            if s["source"].startswith(prefix):
-                s["confidence"] = level
-                matched = True
-                break
-        if not matched:
-            s["confidence"] = "low"
+    # 如果 AI 验证从已有来源中补充了号码，加入 all_phones
+    for src in all_sources:
+        phone = src.get("phone", "")
+        if phone:
+            all_phones.add(phone)
 
     return {
         "phones": sorted(all_phones),
         "phone_count": len(all_phones),
-        "sources": sources,
+        "sources": all_sources,
         "steps": steps if steps else [],
     }

@@ -473,8 +473,11 @@ def get_db() -> sqlite3.Connection:
         _db_conn.execute("ALTER TABLE monitor_log ADD COLUMN scanned_at REAL NOT NULL DEFAULT 0")
     return _db_conn
 
-# 模块加载时初始化数据库表
-get_db()
+
+def init_db():
+    """显式初始化数据库（可选调用，get_db 已内置懒初始化）"""
+    return get_db()
+
 
 def save_items(items: list[dict]) -> int:
     """保存条目并抓取详情页电话，返回新增数"""
